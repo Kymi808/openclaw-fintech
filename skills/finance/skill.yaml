@@ -1,0 +1,44 @@
+name: fintech-finance
+version: "1.0.0"
+description: "Expense tracking, receipt processing, tax docs, bookkeeping"
+author: "fintech-team"
+
+triggers:
+  - type: cron
+    schedule: "0 7 * * 1"
+    action: weekly_report
+  - type: message
+    patterns:
+      - "expense *"
+      - "receipt *"
+      - "tax *"
+      - "budget *"
+      - "invoice *"
+      - "bookkeeping *"
+  - type: media
+    types: ["image"]
+    action: process_receipt
+
+tools:
+  - name: process_receipt
+    description: "Extract data from a receipt photo"
+    handler: "skills.finance.handlers:process_receipt"
+  - name: add_expense
+    description: "Manually add an expense entry"
+    handler: "skills.finance.handlers:add_expense"
+  - name: get_expenses
+    description: "Query expenses by date range or category"
+    handler: "skills.finance.handlers:get_expenses"
+  - name: budget_status
+    description: "Check current budget utilization"
+    handler: "skills.finance.handlers:budget_status"
+  - name: tax_summary
+    description: "Generate tax document summary"
+    handler: "skills.finance.handlers:tax_summary"
+  - name: bank_transactions
+    description: "Fetch and categorize recent bank transactions"
+    handler: "skills.finance.handlers:bank_transactions"
+
+permissions:
+  - network: true
+  - filesystem: readwrite

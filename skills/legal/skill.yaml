@@ -1,0 +1,48 @@
+name: fintech-legal
+version: "1.0.0"
+description: "Contract analysis, SEC monitoring, GDPR compliance, legal research"
+author: "fintech-team"
+
+triggers:
+  - type: cron
+    schedule: "0 */4 * * *"
+    action: check_sec_filings
+  - type: cron
+    schedule: "0 2 * * 1"
+    action: gdpr_scan
+  - type: cron
+    schedule: "0 8 * * *"
+    action: check_contract_renewals
+  - type: message
+    patterns:
+      - "analyze contract *"
+      - "summarize contract *"
+      - "sec filing *"
+      - "compliance *"
+      - "gdpr *"
+      - "legal research *"
+  - type: media
+    types: ["document", "pdf"]
+    action: analyze_contract
+
+tools:
+  - name: analyze_contract
+    description: "Summarize a contract document (processed locally)"
+    handler: "skills.legal.handlers:analyze_contract"
+  - name: check_sec_filings
+    description: "Check SEC EDGAR for new filings"
+    handler: "skills.legal.handlers:check_sec_filings"
+  - name: gdpr_scan
+    description: "Scan a URL for GDPR compliance issues"
+    handler: "skills.legal.handlers:gdpr_scan"
+  - name: check_contract_renewals
+    description: "Check for upcoming contract renewal deadlines"
+    handler: "skills.legal.handlers:check_contract_renewals"
+  - name: legal_research
+    description: "Research legal precedents on a topic"
+    handler: "skills.legal.handlers:legal_research"
+
+permissions:
+  - network: true
+  - filesystem: readwrite
+  - local_llm: required  # contracts MUST be processed locally

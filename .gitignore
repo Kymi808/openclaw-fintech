@@ -1,0 +1,27 @@
+# Environment / secrets
+gateway/.env
+*.env
+!.env.example
+
+# Data files (contain financial data)
+workspaces/*/data/
+workspaces/*/state.json
+logs/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Docker
+docker/volumes/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/

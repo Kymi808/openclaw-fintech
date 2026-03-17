@@ -1,0 +1,41 @@
+# OpenClaw Skill Definition — Trading
+name: fintech-trading
+version: "1.0.0"
+description: "Crypto trading, arbitrage detection, and market monitoring"
+author: "fintech-team"
+
+triggers:
+  - type: cron
+    schedule: "*/5 * * * *"
+    action: heartbeat
+  - type: message
+    patterns:
+      - "buy *"
+      - "sell *"
+      - "price *"
+      - "market update"
+      - "arbitrage"
+      - "trade *"
+      - "positions"
+
+tools:
+  - name: get_prices
+    description: "Fetch current prices for tracked pairs"
+    handler: "skills.trading.handlers:get_prices"
+  - name: execute_trade
+    description: "Execute a trade on a configured exchange"
+    handler: "skills.trading.handlers:execute_trade"
+    requires_approval: conditional  # based on amount
+  - name: check_arbitrage
+    description: "Scan for arbitrage opportunities across exchanges"
+    handler: "skills.trading.handlers:check_arbitrage"
+  - name: get_positions
+    description: "List open positions and P&L"
+    handler: "skills.trading.handlers:get_positions"
+  - name: market_update
+    description: "Generate formatted market update"
+    handler: "skills.trading.handlers:market_update"
+
+permissions:
+  - network: true
+  - filesystem: read  # for config/state files

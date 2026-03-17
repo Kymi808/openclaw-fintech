@@ -1,0 +1,44 @@
+name: fintech-defi
+version: "1.0.0"
+description: "DeFi wallet management, swaps, liquidity, and governance"
+author: "fintech-team"
+
+triggers:
+  - type: cron
+    schedule: "*/15 * * * *"
+    action: heartbeat
+  - type: message
+    patterns:
+      - "swap *"
+      - "wallet *"
+      - "balance *"
+      - "defi *"
+      - "governance *"
+      - "liquidity *"
+      - "gas *"
+      - "yield *"
+
+tools:
+  - name: get_wallet_balances
+    description: "Fetch wallet balances across chains"
+    handler: "skills.defi.handlers:get_wallet_balances"
+  - name: propose_swap
+    description: "Get a quote for a token swap"
+    handler: "skills.defi.handlers:propose_swap"
+  - name: execute_swap
+    description: "Execute an approved token swap"
+    handler: "skills.defi.handlers:execute_swap"
+    requires_approval: conditional
+  - name: get_defi_positions
+    description: "List all DeFi positions (LP, lending, staking)"
+    handler: "skills.defi.handlers:get_defi_positions"
+  - name: check_governance
+    description: "Check active governance proposals"
+    handler: "skills.defi.handlers:check_governance"
+  - name: get_gas_prices
+    description: "Fetch current gas prices across chains"
+    handler: "skills.defi.handlers:get_gas_prices"
+
+permissions:
+  - network: true
+  - filesystem: read

@@ -1,0 +1,117 @@
+# OpenClaw Gateway Configuration — Fintech Agent Team
+# Docs: https://docs.openclaw.ai/
+
+gateway:
+  host: "127.0.0.1"
+  port: 18789
+  protocol: "ws"
+  log_level: "info"
+  audit_log: true
+  audit_log_path: "./logs/audit.jsonl"
+
+# Authentication
+auth:
+  mode: "pairing"  # require pairing code for new senders
+  allowlist:
+    - "+1XXXXXXXXXX"  # TODO: add your phone number
+  admin_users:
+    - "admin@yourcompany.com"
+
+# LLM Providers
+providers:
+  primary:
+    type: "anthropic"
+    model: "claude-sonnet-4-6"
+    api_key: "${ANTHROPIC_API_KEY}"
+    max_tokens: 4096
+  local:
+    type: "ollama"
+    model: "llama3.1:70b"
+    base_url: "http://localhost:11434"
+    # Used by legal-agent for confidential document processing
+
+# Channels
+channels:
+  telegram:
+    enabled: true
+    token: "${TELEGRAM_BOT_TOKEN}"
+    use_for: ["alerts", "trading-signals", "approvals"]
+  whatsapp:
+    enabled: true
+    token: "${WHATSAPP_TOKEN}"
+    phone_number_id: "${WHATSAPP_PHONE_ID}"
+    use_for: ["portfolio-summaries", "expense-tracking", "approvals"]
+  slack:
+    enabled: true
+    token: "${SLACK_BOT_TOKEN}"
+    app_token: "${SLACK_APP_TOKEN}"
+    use_for: ["internal-ops", "compliance-alerts", "team-notifications"]
+  discord:
+    enabled: false
+    token: "${DISCORD_BOT_TOKEN}"
+
+# Multi-Agent Routing
+routing:
+  default_agent: "router"
+  workspaces:
+    - name: "router"
+      path: "./workspaces/router"
+      description: "Triage and route incoming messages to specialist agents"
+    - name: "trading-agent"
+      path: "./workspaces/trading-agent"
+      description: "Crypto trading, arbitrage, and market analysis"
+    - name: "portfolio-agent"
+      path: "./workspaces/portfolio-agent"
+      description: "Portfolio tracking and rebalancing"
+    - name: "defi-agent"
+      path: "./workspaces/defi-agent"
+      description: "DeFi wallet management, swaps, governance"
+    - name: "finance-agent"
+      path: "./workspaces/finance-agent"
+      description: "Expense tracking, receipts, tax, bookkeeping"
+    - name: "legal-agent"
+      path: "./workspaces/legal-agent"
+      description: "Contract analysis, SEC filings, compliance"
+
+# Global Guardrails
+guardrails:
+  require_human_approval:
+    - action: "execute_trade"
+      condition: "amount > 200"
+    - action: "rebalance_portfolio"
+      condition: "always"
+    - action: "defi_swap"
+      condition: "amount > 500"
+    - action: "send_external_api_pii"
+      condition: "always"
+  rate_limits:
+    trades_per_hour: 20
+    api_calls_per_minute: 60
+    messages_per_minute: 30
+  blocked_actions:
+    - "expose_private_keys"
+    - "delete_audit_logs"
+    - "bypass_approval_workflow"
+
+# Cron / Heartbeat
+cron:
+  trading_market_check:
+    schedule: "*/5 * * * *"  # every 5 minutes
+    workspace: "trading-agent"
+    trigger: "heartbeat"
+  portfolio_daily_review:
+    schedule: "0 6 * * *"  # 6am daily
+    workspace: "portfolio-agent"
+    trigger: "heartbeat"
+  sec_filing_check:
+    schedule: "0 */4 * * *"  # every 4 hours
+    workspace: "legal-agent"
+    trigger: "check_sec_filings"
+  compliance_scan:
+    schedule: "0 2 * * 1"  # 2am every Monday
+    workspace: "legal-agent"
+    trigger: "gdpr_scan"
+  defi_position_check:
+    schedule: "*/15 * * * *"  # every 15 minutes
+    workspace: "defi-agent"
+    trigger: "heartbeat"

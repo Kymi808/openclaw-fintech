@@ -1,0 +1,94 @@
+groups:
+  - name: fintech_alerts
+    rules:
+      # Trading alerts
+      - alert: HighTradeErrorRate
+        expr: rate(errors_total{label="binance_ticker"}[5m]) > 0.5
+        for: 2m
+        labels:
+          severity: warning
+          agent: trading
+        annotations:
+          summary: "High trade error rate detected"
+          description: "Exchange API errors exceeding threshold for 2+ minutes"
+
+      - alert: CircuitBreakerOpen
+        expr: circuit_breaker_state > 1
+        for: 1m
+        labels:
+          severity: critical
+          agent: system
+        annotations:
+          summary: "Circuit breaker is OPEN"
+          description: "A circuit breaker has tripped — service is being bypassed"
+
+      - alert: DailyVolumeLimitApproaching
+        expr: daily_volume_usd > 400
+        labels:
+          severity: warning
+          agent: trading
+        annotations:
+          summary: "Approaching daily trading volume limit"
+          description: "Daily volume at ${{ $value }} of $500 limit"
+
+      # Portfolio alerts
+      - alert: HighPortfolioDrift
+        expr: portfolio_drift_max_pct > 10
+        for: 5m
+        labels:
+          severity: warning
+          agent: portfolio
+        annotations:
+          summary: "Portfolio drift exceeds 10%"
+          description: "Maximum allocation drift is {{ $value }}%"
+
+      # DeFi alerts
+      - alert: HighGasPrice
+        expr: gas_price_gwei > 100
+        for: 10m
+        labels:
+          severity: info
+          agent: defi
+        annotations:
+          summary: "Gas prices are elevated"
+          description: "Gas at {{ $value }} gwei for 10+ minutes"
+
+      # Compliance alerts
+      - alert: GDPRIssuesDetected
+        expr: gdpr_issues_open > 0
+        labels:
+          severity: warning
+          agent: legal
+        annotations:
+          summary: "Open GDPR compliance issues"
+          description: "{{ $value }} unresolved GDPR issues detected"
+
+      - alert: ContractExpiringsSoon
+        expr: contract_renewal_alerts > 0
+        labels:
+          severity: warning
+          agent: legal
+        annotations:
+          summary: "Contracts expiring soon"
+          description: "{{ $value }} contracts require attention"
+
+      # System health
+      - alert: HighErrorRate
+        expr: rate(errors_total[5m]) > 1
+        for: 5m
+        labels:
+          severity: critical
+          agent: system
+        annotations:
+          summary: "System-wide error rate is high"
+          description: "More than 1 error/second for 5+ minutes"
+
+      - alert: AgentHeartbeatMissing
+        expr: increase(heartbeats_total[30m]) == 0
+        for: 30m
+        labels:
+          severity: warning
+          agent: system
+        annotations:
+          summary: "Agent heartbeat missing"
+          description: "No heartbeat received in 30 minutes"

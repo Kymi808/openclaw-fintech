@@ -1,0 +1,27 @@
+# OpenClaw Fintech Agent Team — Python Dependencies
+
+# HTTP client (async)
+httpx>=0.27.0
+
+# Encryption at rest
+cryptography>=43.0.0
+
+# Web3 / blockchain (for DeFi agent)
+# web3>=7.0.0  # uncomment if using web3.py directly
+
+# PDF processing (for legal agent)
+pdfplumber>=0.11.0
+PyMuPDF>=1.24.0
+
+# Banking (Plaid)
+plaid-python>=25.0.0
+
+# Data handling
+python-dateutil>=2.9.0
+
+# Environment
+python-dotenv>=1.0.0
+
+# Testing
+pytest>=8.0.0
+pytest-asyncio>=0.24.0
