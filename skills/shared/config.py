@@ -68,7 +68,7 @@ DEFI_LIMITS = {
 }
 
 # Allowed exchanges and protocols
-ALLOWED_EXCHANGES = ["binance", "coinbase"]
+ALLOWED_EXCHANGES = ["binance", "coinbase", "alpaca"]
 ALLOWED_DEFI_PROTOCOLS = [
     "uniswap_v3", "sushiswap", "1inch",
     "aave_v3", "lido", "compound_v3", "curve",
@@ -77,3 +77,6 @@ ALLOWED_CHAINS = ["ethereum", "polygon", "arbitrum", "base"]
 
 # Allowed trading pairs
 ALLOWED_PAIRS = ["BTC/USDT", "ETH/USDT", "SOL/USDT"]
+
+# Alpaca paper trading pairs (stocks use USD, not USDT)
+ALLOWED_STOCK_PAIRS = ["AAPL/USD", "TSLA/USD", "MSFT/USD", "NVDA/USD", "SPY/USD"]

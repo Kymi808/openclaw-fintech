@@ -9,7 +9,7 @@ from .resilience import (
     retry, RetryExhausted,
     CircuitBreaker, CircuitOpenError, CircuitState,
     RateLimiter, with_timeout,
-    binance_circuit, coinbase_circuit, alchemy_circuit,
+    binance_circuit, coinbase_circuit, alpaca_circuit, alchemy_circuit,
     exchange_limiter, api_limiter, sec_limiter,
 )
 from .rbac import access_control, Role, Action

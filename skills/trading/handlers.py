@@ -9,6 +9,7 @@ from skills.shared import (
     get_logger, audit_log, approval_engine, ALLOWED_PAIRS, ALLOWED_EXCHANGES,
     DEFAULT_LIMITS,
 )
+from skills.shared.config import ALLOWED_STOCK_PAIRS
 from .exchange_client import get_exchange_client, Ticker
 from .strategy import (
     check_risk_limits, needs_approval, detect_arbitrage,
@@ -36,15 +37,22 @@ def _save_state(state: dict) -> None:
     STATE_FILE.write_text(json.dumps(state, indent=2))
 
 
+def _pairs_for_exchange(exchange_name: str, pairs: list[str] = None) -> list[str]:
+    """Return appropriate pairs for an exchange (stocks for Alpaca, crypto otherwise)."""
+    if exchange_name == "alpaca":
+        return pairs if pairs else ALLOWED_STOCK_PAIRS
+    return pairs if pairs else ALLOWED_PAIRS
+
+
 async def get_prices(pairs: list[str] = None) -> list[dict]:
     """Fetch current prices from all configured exchanges."""
-    pairs = pairs or ALLOWED_PAIRS
     all_tickers = []
 
     for exchange_name in ALLOWED_EXCHANGES:
         try:
+            ex_pairs = _pairs_for_exchange(exchange_name, pairs)
             client = get_exchange_client(exchange_name)
-            tickers = await client.get_all_tickers(pairs)
+            tickers = await client.get_all_tickers(ex_pairs)
             all_tickers.extend(tickers)
             await client.close()
         except Exception as e:
@@ -70,8 +78,9 @@ async def execute_trade(
     """Execute a trade with full risk checks and approval workflow."""
 
     # Validate pair
-    if pair not in ALLOWED_PAIRS:
-        return {"error": f"Pair {pair} not in allowed list: {ALLOWED_PAIRS}"}
+    all_allowed = ALLOWED_PAIRS + ALLOWED_STOCK_PAIRS
+    if pair not in all_allowed:
+        return {"error": f"Pair {pair} not in allowed list: {all_allowed}"}
 
     # Validate exchange
     if exchange not in ALLOWED_EXCHANGES:
@@ -155,7 +164,8 @@ async def check_arbitrage() -> list[dict]:
     for exchange_name in ALLOWED_EXCHANGES:
         try:
             client = get_exchange_client(exchange_name)
-            tickers = await client.get_all_tickers(ALLOWED_PAIRS)
+            ex_pairs = _pairs_for_exchange(exchange_name)
+            tickers = await client.get_all_tickers(ex_pairs)
             tickers_by_exchange[exchange_name] = tickers
             await client.close()
         except Exception as e:
@@ -225,7 +235,8 @@ async def heartbeat() -> str:
     for exchange_name in ALLOWED_EXCHANGES:
         try:
             client = get_exchange_client(exchange_name)
-            ex_tickers = await client.get_all_tickers(ALLOWED_PAIRS)
+            ex_pairs = _pairs_for_exchange(exchange_name)
+            ex_tickers = await client.get_all_tickers(ex_pairs)
             tickers.extend(ex_tickers)
             tickers_by_exchange[exchange_name] = ex_tickers
             await client.close()

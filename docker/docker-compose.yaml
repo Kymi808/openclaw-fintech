@@ -23,8 +23,8 @@ services:
       - OPENCLAW_CONFIG=/app/config.yaml
       - OPENCLAW_SKILLS_PATH=/app/skills
       - OPENCLAW_WORKSPACES_PATH=/app/workspaces
-    depends_on:
-      - ollama
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9090/health"]
       interval: 30s
@@ -34,29 +34,8 @@ services:
     networks:
       - fintech-net
 
-  # Ollama — Local LLM for confidential document processing
-  ollama:
-    image: ollama/ollama:latest
-    container_name: fintech-ollama
-    restart: unless-stopped
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama-models:/root/.ollama
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-    networks:
-      - fintech-net
+  # Ollama — runs on host (brew services), not in Docker
+  # Gateway connects via host.docker.internal:11434
 
   # Prometheus — Metrics collection
   prometheus:
@@ -110,7 +89,6 @@ services:
 
 volumes:
   gateway-data:
-  ollama-models:
   seq-data:
   prometheus-data:
   grafana-data:

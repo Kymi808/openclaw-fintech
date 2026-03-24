@@ -261,6 +261,7 @@ async def with_timeout(coro, timeout_seconds: float, operation: str = "operation
 # Exchange circuit breakers
 binance_circuit = CircuitBreaker(name="binance", failure_threshold=5, recovery_timeout=60)
 coinbase_circuit = CircuitBreaker(name="coinbase", failure_threshold=5, recovery_timeout=60)
+alpaca_circuit = CircuitBreaker(name="alpaca", failure_threshold=5, recovery_timeout=60)
 alchemy_circuit = CircuitBreaker(name="alchemy", failure_threshold=3, recovery_timeout=30)
 
 # Rate limiters

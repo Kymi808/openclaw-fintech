@@ -7,6 +7,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 
 from skills.shared import get_logger, audit_log, approval_engine
+from skills.shared.config import ALLOWED_STOCK_PAIRS
 from skills.trading.exchange_client import get_exchange_client
 
 logger = get_logger("portfolio.handlers")
@@ -62,7 +63,7 @@ async def get_portfolio() -> dict:
     holdings: list[dict] = []
     total_value = 0.0
 
-    # Fetch balances from exchanges
+    # Fetch balances from crypto exchanges
     for exchange_name in ["binance", "coinbase"]:
         try:
             client = get_exchange_client(exchange_name)
@@ -91,6 +92,42 @@ async def get_portfolio() -> dict:
             await client.close()
         except Exception as e:
             logger.error(f"Failed to fetch from {exchange_name}: {e}")
+
+    # Fetch balances from Alpaca (stocks)
+    try:
+        alpaca = get_exchange_client("alpaca")
+
+        # Check cash balance
+        cash = await alpaca.get_balance("USD")
+        if cash > 0:
+            total_value += cash
+            holdings.append({
+                "asset": "USD",
+                "amount": cash,
+                "price": 1.0,
+                "value_usd": cash,
+                "exchange": "alpaca",
+            })
+
+        # Check stock positions
+        for pair in ALLOWED_STOCK_PAIRS:
+            symbol = pair.split("/")[0]
+            qty = await alpaca.get_balance(symbol)
+            if qty > 0:
+                ticker = await alpaca.get_ticker(pair)
+                value = qty * ticker.price
+                total_value += value
+                holdings.append({
+                    "asset": symbol,
+                    "amount": qty,
+                    "price": ticker.price,
+                    "value_usd": value,
+                    "exchange": "alpaca",
+                })
+
+        await alpaca.close()
+    except Exception as e:
+        logger.error(f"Failed to fetch from alpaca: {e}")
 
     # Aggregate by asset
     asset_totals: dict[str, float] = {}

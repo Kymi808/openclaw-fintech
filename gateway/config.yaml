@@ -20,15 +20,15 @@ auth:
 # LLM Providers
 providers:
   primary:
-    type: "anthropic"
-    model: "claude-sonnet-4-6"
-    api_key: "${ANTHROPIC_API_KEY}"
+    type: "ollama"
+    model: "gemma2:2b"
+    base_url: "http://host.docker.internal:11434"
     max_tokens: 4096
   local:
     type: "ollama"
-    model: "llama3.1:70b"
-    base_url: "http://localhost:11434"
-    # Used by legal-agent for confidential document processing
+    model: "gemma2:2b"
+    base_url: "http://host.docker.internal:11434"
+    # Also used by legal-agent for confidential document processing
 
 # Channels
 channels:
