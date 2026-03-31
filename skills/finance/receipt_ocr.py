@@ -1,9 +1,10 @@
 """
-Receipt OCR pipeline using Ollama vision models.
+Receipt OCR pipeline using Anthropic Claude vision.
 Extracts merchant, amount, date, payment method, and line items from receipt images.
 """
 import base64
 import json
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,10 +15,8 @@ from skills.shared import get_logger, retry, RetryExhausted
 
 logger = get_logger("receipt_ocr")
 
-OLLAMA_URL = "http://localhost:11434"
-
-# Supported vision models in order of preference
-VISION_MODELS = ["llava:13b", "llava:7b", "llava", "bakllava"]
+ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
+ANTHROPIC_MODEL = "claude-sonnet-4-20250514"
 
 EXTRACTION_PROMPT = """Analyze this receipt image and extract the following information as valid JSON.
 Be precise with numbers — do not round. If a field is not visible, use null.
@@ -56,30 +55,11 @@ class ReceiptData:
 
 
 class ReceiptOCR:
-    """Extract structured data from receipt images using vision LLMs."""
+    """Extract structured data from receipt images using Claude vision."""
 
-    def __init__(self, ollama_url: str = None):
-        self.ollama_url = ollama_url or OLLAMA_URL
-
-    async def _get_available_model(self) -> Optional[str]:
-        """Find the first available vision model."""
-        try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                resp = await client.get(f"{self.ollama_url}/api/tags")
-                resp.raise_for_status()
-                available = {m["name"] for m in resp.json().get("models", [])}
-
-                for model in VISION_MODELS:
-                    if model in available:
-                        return model
-                    # Check without tag
-                    base = model.split(":")[0]
-                    for avail in available:
-                        if avail.startswith(base):
-                            return avail
-        except Exception as e:
-            logger.error(f"Cannot connect to Ollama: {e}")
-        return None
+    def __init__(self, api_key: str = None, model: str = None):
+        self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY", "")
+        self.model = model or ANTHROPIC_MODEL
 
     def _encode_image(self, image_path: str) -> str:
         """Read and base64-encode an image file."""
@@ -100,36 +80,64 @@ class ReceiptOCR:
         with open(path, "rb") as f:
             return base64.b64encode(f.read()).decode("utf-8")
 
+    def _get_media_type(self, image_path: str) -> str:
+        """Get the MIME type for an image file."""
+        suffix = Path(image_path).suffix.lower()
+        return {
+            ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+            ".png": "image/png", ".gif": "image/gif",
+            ".webp": "image/webp", ".bmp": "image/bmp",
+        }.get(suffix, "image/jpeg")
+
     @retry(max_attempts=2, base_delay=2.0, retryable_exceptions=(httpx.ConnectError, httpx.ReadTimeout))
     async def extract(self, image_path: str) -> ReceiptData:
-        """Extract receipt data from an image file."""
-        model = await self._get_available_model()
-        if not model:
+        """Extract receipt data from an image file using Claude vision."""
+        if not self.api_key:
             raise RuntimeError(
-                "No vision model available in Ollama. "
-                "Install one with: ollama pull llava:13b"
+                "ANTHROPIC_API_KEY not set. "
+                "Set it in gateway/.env or as an environment variable."
             )
 
         image_b64 = self._encode_image(image_path)
+        media_type = self._get_media_type(image_path)
 
         async with httpx.AsyncClient(timeout=120.0) as client:
             resp = await client.post(
-                f"{self.ollama_url}/api/generate",
+                ANTHROPIC_API_URL,
+                headers={
+                    "x-api-key": self.api_key,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                },
                 json={
-                    "model": model,
-                    "prompt": EXTRACTION_PROMPT,
-                    "images": [image_b64],
-                    "stream": False,
-                    "options": {
-                        "temperature": 0.1,  # Low temp for precise extraction
-                        "num_predict": 1024,
-                    },
+                    "model": self.model,
+                    "max_tokens": 1024,
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "image",
+                                    "source": {
+                                        "type": "base64",
+                                        "media_type": media_type,
+                                        "data": image_b64,
+                                    },
+                                },
+                                {
+                                    "type": "text",
+                                    "text": EXTRACTION_PROMPT,
+                                },
+                            ],
+                        }
+                    ],
+                    "temperature": 0.1,
                 },
             )
             resp.raise_for_status()
-            raw_response = resp.json().get("response", "")
+            raw_response = resp.json()["content"][0]["text"]
 
-        return self._parse_response(raw_response, model)
+        return self._parse_response(raw_response, self.model)
 
     def _parse_response(self, raw: str, model: str) -> ReceiptData:
         """Parse the LLM response into structured ReceiptData."""
@@ -234,3 +242,6 @@ class ReceiptOCR:
 
 # Singleton
 receipt_ocr = ReceiptOCR()
+
+# Backwards-compatible alias
+OLLAMA_URL = None  # No longer used — kept only for import compatibility

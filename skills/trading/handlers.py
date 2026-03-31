@@ -37,11 +37,22 @@ def _save_state(state: dict) -> None:
     STATE_FILE.write_text(json.dumps(state, indent=2))
 
 
+def _is_stock_pair(pair: str) -> bool:
+    """Check if a pair is a stock (USD denominated, not crypto)."""
+    return pair.endswith("/USD") and pair.split("/")[0] in ("AAPL", "TSLA", "MSFT", "NVDA", "SPY")
+
+
 def _pairs_for_exchange(exchange_name: str, pairs: list[str] = None) -> list[str]:
-    """Return appropriate pairs for an exchange (stocks for Alpaca, crypto otherwise)."""
+    """Return appropriate pairs for an exchange (stocks for Alpaca, crypto otherwise).
+    Filters out stock pairs from crypto exchanges and crypto pairs from Alpaca."""
+    if pairs:
+        if exchange_name == "alpaca":
+            return [p for p in pairs if _is_stock_pair(p)]
+        else:
+            return [p for p in pairs if not _is_stock_pair(p)]
     if exchange_name == "alpaca":
-        return pairs if pairs else ALLOWED_STOCK_PAIRS
-    return pairs if pairs else ALLOWED_PAIRS
+        return ALLOWED_STOCK_PAIRS
+    return ALLOWED_PAIRS
 
 
 async def get_prices(pairs: list[str] = None) -> list[dict]:
@@ -51,6 +62,8 @@ async def get_prices(pairs: list[str] = None) -> list[dict]:
     for exchange_name in ALLOWED_EXCHANGES:
         try:
             ex_pairs = _pairs_for_exchange(exchange_name, pairs)
+            if not ex_pairs:
+                continue  # skip exchanges with no matching pairs
             client = get_exchange_client(exchange_name)
             tickers = await client.get_all_tickers(ex_pairs)
             all_tickers.extend(tickers)

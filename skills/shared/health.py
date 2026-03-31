@@ -29,24 +29,46 @@ class HealthChecker:
     def __init__(self):
         self._last_results: dict[str, HealthStatus] = {}
 
-    async def check_ollama(self) -> HealthStatus:
-        """Check if local Ollama LLM is running."""
+    async def check_anthropic(self) -> HealthStatus:
+        """Check if Anthropic API is reachable."""
+        import os
         start = time.time()
+        api_key = os.getenv("ANTHROPIC_API_KEY", "")
+        if not api_key:
+            return HealthStatus(
+                service="anthropic",
+                healthy=False,
+                latency_ms=0,
+                message="UNHEALTHY: ANTHROPIC_API_KEY not set",
+                checked_at=time.time(),
+            )
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                resp = await client.get("http://localhost:11434/api/tags")
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(
+                    "https://api.anthropic.com/v1/messages",
+                    headers={
+                        "x-api-key": api_key,
+                        "anthropic-version": "2023-06-01",
+                        "content-type": "application/json",
+                    },
+                    json={
+                        "model": "claude-sonnet-4-20250514",
+                        "max_tokens": 1,
+                        "messages": [{"role": "user", "content": "ping"}],
+                    },
+                )
+                # Any 2xx response means the API key works
                 resp.raise_for_status()
-                models = resp.json().get("models", [])
                 return HealthStatus(
-                    service="ollama",
+                    service="anthropic",
                     healthy=True,
                     latency_ms=(time.time() - start) * 1000,
-                    message=f"OK — {len(models)} models loaded",
+                    message="OK — Claude API reachable",
                     checked_at=time.time(),
                 )
         except Exception as e:
             return HealthStatus(
-                service="ollama",
+                service="anthropic",
                 healthy=False,
                 latency_ms=(time.time() - start) * 1000,
                 message=f"UNHEALTHY: {e}",
@@ -101,7 +123,7 @@ class HealthChecker:
     async def check_all(self) -> dict:
         """Run all health checks concurrently."""
         checks = await asyncio.gather(
-            self.check_ollama(),
+            self.check_anthropic(),
             self.check_exchange("binance", "https://api.binance.com/api/v3/ping"),
             self.check_exchange("coinbase", "https://api.coinbase.com/v2/time"),
             self.check_database(),

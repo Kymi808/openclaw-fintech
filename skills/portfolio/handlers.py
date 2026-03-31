@@ -6,9 +6,23 @@ from dataclasses import dataclass
 from pathlib import Path
 from datetime import datetime, timezone
 
+import os
+
 from skills.shared import get_logger, audit_log, approval_engine
 from skills.shared.config import ALLOWED_STOCK_PAIRS
 from skills.trading.exchange_client import get_exchange_client
+
+
+def _exchange_configured(name: str) -> bool:
+    """Check if an exchange has real API keys (not placeholders)."""
+    placeholders = {"", "xxxxx", "sk-xxxxx"}
+    if name == "binance":
+        return os.getenv("BINANCE_API_KEY", "") not in placeholders
+    if name == "coinbase":
+        return os.getenv("COINBASE_API_KEY", "") not in placeholders
+    if name == "alpaca":
+        return os.getenv("ALPACA_API_KEY", "") not in placeholders
+    return False
 
 logger = get_logger("portfolio.handlers")
 
@@ -63,8 +77,11 @@ async def get_portfolio() -> dict:
     holdings: list[dict] = []
     total_value = 0.0
 
-    # Fetch balances from crypto exchanges
+    # Fetch balances from crypto exchanges (skip if not configured)
     for exchange_name in ["binance", "coinbase"]:
+        if not _exchange_configured(exchange_name):
+            logger.debug(f"Skipping {exchange_name} — not configured")
+            continue
         try:
             client = get_exchange_client(exchange_name)
 
@@ -134,12 +151,14 @@ async def get_portfolio() -> dict:
     for h in holdings:
         asset_totals[h["asset"]] = asset_totals.get(h["asset"], 0) + h["value_usd"]
 
-    # Compute allocations
+    # Compute allocations — show all held assets, plus any targets with 0 balance
+    all_assets = set(targets.keys()) | set(asset_totals.keys())
+    all_assets.discard("OTHER")
+
     result_holdings = []
-    for asset, target_pct in targets.items():
-        if asset == "OTHER":
-            continue
+    for asset in sorted(all_assets):
         value = asset_totals.get(asset, 0.0)
+        target_pct = targets.get(asset, 0.0)
         actual_pct = value / total_value if total_value > 0 else 0.0
         drift = actual_pct - target_pct
         result_holdings.append({

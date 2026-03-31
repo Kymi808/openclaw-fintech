@@ -314,7 +314,7 @@ async def handle_finance(text: str) -> str:
         "Available commands:\n"
         "• `budget` — check budget status\n"
         "• `expense` — view expenses\n"
-        "• Send a receipt photo to process it (requires Ollama)"
+        "• Send a receipt photo to process it"
     )
 
 
@@ -367,7 +367,7 @@ async def handle_legal(text: str) -> str:
         "• `sec filing AAPL` — check SEC filings\n"
         "• `legal research <topic>` — search case law\n"
         "• `gdpr scan <url>` — GDPR compliance check\n"
-        "• Send a PDF to analyze a contract (requires Ollama)"
+        "• Send a PDF to analyze a contract"
     )
 
 
@@ -460,7 +460,7 @@ def main():
     print(f"  Agents: {', '.join(AGENTS.keys())}")
     print(f"  Routing: pattern-based (mimics OpenClaw router agent)")
     print(f"  Trading: Alpaca paper trading (no real money)")
-    print(f"  LLM: Ollama @ localhost:11434")
+    print(f"  LLM: Anthropic Claude API")
     print("=" * 60)
     print("  Bot is running. Send a message on Telegram.\n")
 

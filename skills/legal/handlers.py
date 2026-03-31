@@ -1,14 +1,27 @@
 """
 OpenClaw skill handlers for the Legal & Compliance Agent.
-CRITICAL: All contract analysis uses LOCAL LLM only.
+Uses Anthropic Claude API for document analysis.
 """
 import json
+import os
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 import httpx
 
 from skills.shared import get_logger, audit_log
+
+ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
+ANTHROPIC_MODEL = "claude-sonnet-4-20250514"
+
+
+def _anthropic_headers() -> dict:
+    api_key = os.getenv("ANTHROPIC_API_KEY", "")
+    return {
+        "x-api-key": api_key,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+    }
 
 logger = get_logger("legal.handlers")
 
@@ -55,8 +68,7 @@ def _save_sec_state(state: dict):
 
 async def analyze_contract(document_path: str) -> dict:
     """
-    Analyze a contract document using LOCAL LLM (Ollama).
-    NEVER sends document content to cloud APIs.
+    Analyze a contract document using Anthropic Claude API.
     """
     logger.info(f"Analyzing contract: {document_path}")
 
@@ -65,49 +77,45 @@ async def analyze_contract(document_path: str) -> dict:
     if not doc_path.exists():
         return {"error": f"Document not found: {document_path}"}
 
-    # For PDF files, we'd use a PDF extraction library (PyMuPDF, pdfplumber)
-    # For now, handle text-based files
     if doc_path.suffix == ".pdf":
-        # In production: extract text with pdfplumber
-        # import pdfplumber
-        # with pdfplumber.open(doc_path) as pdf:
-        #     text = "\n".join(page.extract_text() for page in pdf.pages)
         content_note = "PDF extraction required — install pdfplumber"
     else:
         content_note = doc_path.read_text()
 
-    # Send to LOCAL Ollama instance — NEVER to cloud
+    prompt = (
+        "You are a legal document analyst. Analyze this contract and provide:\n"
+        "1. PARTIES: Who are the parties involved?\n"
+        "2. TYPE: What type of agreement is this?\n"
+        "3. EFFECTIVE DATE and EXPIRATION DATE\n"
+        "4. KEY TERMS: List the most important terms in plain language\n"
+        "5. OBLIGATIONS: What must each party do?\n"
+        "6. RISK FLAGS: Flag any concerning clauses (indemnification, "
+        "liability caps, auto-renewal, non-compete, IP assignment, "
+        "governing law issues, missing standard clauses)\n"
+        "7. KEY DATES: List all important deadlines\n\n"
+        f"CONTRACT TEXT:\n{content_note}"
+    )
+
     try:
         async with httpx.AsyncClient(timeout=120.0) as client:
             resp = await client.post(
-                "http://localhost:11434/api/generate",
+                ANTHROPIC_API_URL,
+                headers=_anthropic_headers(),
                 json={
-                    "model": "llama3.1:70b",
-                    "prompt": (
-                        "You are a legal document analyst. Analyze this contract and provide:\n"
-                        "1. PARTIES: Who are the parties involved?\n"
-                        "2. TYPE: What type of agreement is this?\n"
-                        "3. EFFECTIVE DATE and EXPIRATION DATE\n"
-                        "4. KEY TERMS: List the most important terms in plain language\n"
-                        "5. OBLIGATIONS: What must each party do?\n"
-                        "6. RISK FLAGS: Flag any concerning clauses (indemnification, "
-                        "liability caps, auto-renewal, non-compete, IP assignment, "
-                        "governing law issues, missing standard clauses)\n"
-                        "7. KEY DATES: List all important deadlines\n\n"
-                        f"CONTRACT TEXT:\n{content_note}"
-                    ),
-                    "stream": False,
+                    "model": ANTHROPIC_MODEL,
+                    "max_tokens": 4096,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.2,
                 },
             )
             resp.raise_for_status()
-            analysis = resp.json().get("response", "Analysis failed")
+            analysis = resp.json()["content"][0]["text"]
 
     except httpx.ConnectError:
         return {
             "error": (
-                "Local LLM (Ollama) is not running. "
-                "Contract analysis REQUIRES a local model for confidentiality. "
-                "Start Ollama with: ollama serve"
+                "Cannot reach Anthropic API. "
+                "Check your ANTHROPIC_API_KEY and network connection."
             )
         }
     except Exception as e:
@@ -469,42 +477,44 @@ async def legal_research(topic: str, jurisdiction: str = "US Federal") -> dict:
             + "\n".join(case_lines)
         )
 
-    # Step 2: Use local LLM to synthesize with real citations
+    # Step 2: Use Claude to synthesize with real citations
+    prompt = (
+        f"You are a legal research assistant. Analyze the following topic:\n"
+        f"Topic: {topic}\n"
+        f"Jurisdiction: {jurisdiction}\n"
+        f"{case_context}\n\n"
+        f"Provide:\n"
+        f"1. Key legal principles applicable\n"
+        f"2. Relevant statutes and regulations\n"
+        f"3. Notable case precedents — use the real cases provided above "
+        f"when relevant, and clearly mark any other citations as "
+        f"'[UNVERIFIED - needs manual confirmation]'\n"
+        f"4. Regulatory guidance or agency opinions\n"
+        f"5. Practical implications\n\n"
+        f"Flag any jurisdiction limitations."
+    )
+
     try:
         async with httpx.AsyncClient(timeout=120.0) as client:
             resp = await client.post(
-                "http://localhost:11434/api/generate",
+                ANTHROPIC_API_URL,
+                headers=_anthropic_headers(),
                 json={
-                    "model": "llama3.1:70b",
-                    "prompt": (
-                        f"You are a legal research assistant. Analyze the following topic:\n"
-                        f"Topic: {topic}\n"
-                        f"Jurisdiction: {jurisdiction}\n"
-                        f"{case_context}\n\n"
-                        f"Provide:\n"
-                        f"1. Key legal principles applicable\n"
-                        f"2. Relevant statutes and regulations\n"
-                        f"3. Notable case precedents — use the real cases provided above "
-                        f"when relevant, and clearly mark any other citations as "
-                        f"'[UNVERIFIED - needs manual confirmation]'\n"
-                        f"4. Regulatory guidance or agency opinions\n"
-                        f"5. Practical implications\n\n"
-                        f"Flag any jurisdiction limitations."
-                    ),
-                    "stream": False,
-                    "options": {"temperature": 0.2},
+                    "model": ANTHROPIC_MODEL,
+                    "max_tokens": 4096,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.2,
                 },
             )
             resp.raise_for_status()
-            analysis = resp.json().get("response", "Analysis failed")
+            analysis = resp.json()["content"][0]["text"]
 
     except httpx.ConnectError:
-        # If Ollama is down, still return the CourtListener results
         if court_results and court_results.opinions:
             msg = format_search_results(court_results)
             msg += (
-                "\n\n⚠️ Local LLM unavailable — showing raw search results only.\n"
-                "Start Ollama for synthesized analysis: ollama serve\n\n"
+                "\n\n⚠️ Anthropic API unavailable — showing raw search results only.\n"
+                "Check your ANTHROPIC_API_KEY.\n\n"
                 f"{DISCLAIMER}"
             )
             return {
@@ -513,7 +523,7 @@ async def legal_research(topic: str, jurisdiction: str = "US Federal") -> dict:
                 "court_results": len(court_results.opinions),
                 "message": msg,
             }
-        return {"error": "Local LLM (Ollama) not running and CourtListener returned no results."}
+        return {"error": "Anthropic API unreachable and CourtListener returned no results."}
     except Exception as e:
         return {"error": f"Research failed: {e}"}
 
