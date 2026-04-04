@@ -1,380 +1,467 @@
-# OpenClaw Fintech — Multi-Agent Bot Team
+# OpenClaw Quant — Multi-Agent Autonomous Trading System
 
-A production-grade multi-agent fintech system built on [OpenClaw](https://github.com/openclaw/openclaw). Six specialized AI agents work as a team to handle crypto trading, portfolio management, DeFi operations, expense tracking, and legal compliance — all orchestrated through a single gateway accessible via Telegram, WhatsApp, Slack, and 20+ messaging platforms.
+A production-grade quantitative trading system that combines ML-driven stock ranking with a multi-agent debate architecture for portfolio decision-making. The system autonomously generates trading signals, debates portfolio construction parameters through 16 specialized agents, and executes trades on Alpaca.
 
-## Architecture
+## System Overview
 
 ```
-                         OpenClaw Gateway
-                     ws://localhost:18789
-                              │
-              ┌───────────────┼───────────────┐
-              │               │               │
-         WhatsApp         Telegram          Slack
-         (retail)         (alerts)       (internal)
-              │               │               │
-              └───────────────┼───────────────┘
-                              │
-                    ┌─────────┴─────────┐
-                    │   Router Agent     │
-                    │  (triage & route)  │
-                    └─────────┬─────────┘
-                              │
-        ┌──────────┬──────────┼──────────┬──────────┐
-        │          │          │          │          │
-   ┌────┴────┐┌───┴────┐┌────┴───┐┌────┴────┐┌───┴─────┐
-   │ Trading ││Portfolio││  DeFi  ││ Finance ││  Legal  │
-   │  Agent  ││ Agent   ││ Agent  ││  Agent  ││  Agent  │
-   └─────────┘└────────┘└────────┘└─────────┘└─────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                     DATA LAYER                                   │
+│  Alpaca Market Data (bars, snapshots, news)                     │
+│  SEC EDGAR (filings, insider trading)                           │
+│  FRED (macro economic releases)                                  │
+│  Claude Haiku (LLM sentiment analysis)                          │
+│  Financial Modeling Prep (fundamentals, ready for API key)      │
+└──────────────────────┬──────────────────────────────────────────┘
+                       │
+┌──────────────────────▼──────���───────────────────────────────────┐
+│                 ML SIGNAL GENERATION                              │
+│  CS_Multi_Model_Trading_System (separate repo)                  │
+│  ├── CrossMamba (primary, Sharpe 2.36, trains on Linux)         │
+│  ├─��� LightGBM (fallback, trains in seconds)                    │
+│  └── TST (Time Series Transformer, optional)                   │
+│  186 features → 50 selected → stock rankings                    │
+└──────────────────────┬──���───────────────────────────────────────┘
+                       │
+┌──────────────────────▼──────────────────────────────────────────┐
+│              NEWS GATHERING (3 agents, parallel)                  │
+│  ├── Macro News Agent (Fed, economic data, geopolitical)        │
+│  ├── Sector News Agent (industry trends, sector rotation)       │
+│  └── Company News Agent (earnings, insider, M&A, analyst)       │
+│  + SEC EDGAR filings + FRED macro releases                      │
+│  + Claude Haiku LLM analysis (~$0.60/month)                     │
+└────────────────────���─┬──────────────────────────────────────────┘
+                       │
+┌──────────────────────▼──���───────────────────────────────────────┐
+│              MARKET INTELLIGENCE (Intel Agent)                    │
+│  Aggregates: regime detection + market breadth + news sentiment │
+│  Produces: MarketBriefing consumed by all analysts              │
+└──────────────────��───┬──────────────────���───────────────────────┘
+                       │
+┌──────────────────────▼──────────────────────────────────────────┐
+│              MULTI-AGENT DEBATE (5 analysts, parallel)           │
+│  ├── Momentum Analyst (trend-following, weights breadth)        │
+│  ├── Value Analyst (mean-reversion, weights credit stress)      │
+│  ├���─ Macro Analyst (top-down, weights VIX regime)               │
+│  ├── Sentiment Analyst (news-driven, weights LLM sentiment)     │
+│  └── Risk Analyst (defensive, weights drawdown proximity)       │
+│  Each outputs: conviction score + recommended portfolio params  │
+│  Scoring is DETERMINISTIC (no LLM in decision loop)             │
+└──────────────────────┬──────────────────────────────────────────┘
+                       │
+┌──────────────────────▼─��─────────────────────────���──────────────┐
+│              PORTFOLIO MANAGERS (3 PMs propose)                   │
+│  ├── Aggressive PM (weights momentum + sentiment analysts)      │
+│  ├── Conservative PM (weights risk + macro analysts)            │
+│  └── Balanced PM (equal weighting)                              │
+│  Each blends all 5 analyst theses → proposes n_long, n_short,  │
+│  leverage, vol target, sector constraints                       │
+└──────────────────��───┬──────────────────────────────────────────┘
+                       │
+┌──────────────────────▼───────��──────────────────────────��───────┐
+│              CIO (Chief Investment Officer)                       │
+│  Selects which PM's proposal to use:                            │
+│  VIX crisis → conservative. Low vol → aggressive.               │
+│  Safety override: VIX > 35 or drawdown > 10% → force conserv.  │
+│  First daily run always requires human approval.                │
+└──────────────────────┬──────────────��───────────────────────────┘
+                       │
+┌──────────────────────▼──────────────────────────────────────────┐
+│              EXECUTION AGENT                                     │
+│  Daily: ML rankings → portfolio construction → Alpaca orders    │
+│  Intraday: VWAP/ORB/momentum/gap signals → EOD close           │
+│  Safeguards: manipulation detection, risk limits, fat finger    │
+│  VWAP splitting, fill polling, retry, idempotent orders         │
+└──────────────────���───┬──────────────────────────────────────────┘
+                       │
+┌──���───────────────────▼─────────────────────────────────────���────┐
+│              MONITORING & LEARNING                                │
+│  P&L Tracker (SQLite): daily returns, Sharpe, drawdown          │
+│  Position Reconciliation: system state vs Alpaca                │
+│  Adaptive Feedback: weights evolve based on realized returns    │
+│  Alerting: Slack/Discord webhooks for failures                  │
+│  Weekly Research Report: Claude-generated institutional report  │
+└──��──────────────────────────────────────────────────────────────┘
 ```
 
-## Agents
+## Agent Inventory (16 Total)
 
-### Router Agent
-Triages every incoming message and routes to the correct specialist. Never executes financial actions directly — pure routing logic with anti-abuse protection.
+| Agent | Type | What It Does |
+|-------|------|-------------|
+| **Intel Agent** | Data gathering | Aggregates regime (VIX, yields, credit), breadth (sector rotation, advance/decline), news sentiment into a MarketBriefing |
+| **Momentum Analyst** | Thesis formation | Trend-following bias. Weights model dispersion (0.35) and breadth (0.30). CrossMamba-weighted predictions (0.60). Aggressive risk profile |
+| **Value Analyst** | Thesis formation | Mean-reversion bias. Weights credit stress (0.20) and drawdown proximity (0.20). Moderate risk profile |
+| **Macro Analyst** | Thesis formation | Top-down bias. Weights VIX regime (0.30) and credit spread (0.25). Moderate risk profile |
+| **Sentiment Analyst** | Thesis formation | News-driven. Weights sentiment signal (0.40). Aggressive risk profile |
+| **Risk Analyst** | Thesis formation | Defensive bias. Weights drawdown (0.30) and VIX (0.30). Conservative risk profile |
+| **Aggressive PM** | Portfolio construction | Trusts momentum (0.30) and sentiment (0.30). Scales leverage up 20%, positions up 20% |
+| **Conservative PM** | Portfolio construction | Trusts risk (0.35) and macro (0.25). Scales leverage down 20%, positions down 20% |
+| **Balanced PM** | Portfolio construction | Equal trust across all analysts. No scaling bias |
+| **CIO** | Decision maker | Selects PM based on market conditions. Safety overrides for extreme VIX or drawdown |
+| **Macro News Agent** | News gathering | Monitors Fed, economic data, geopolitical events via Alpaca news + FRED |
+| **Sector News Agent** | News gathering | Monitors industry trends, sector rotation via Alpaca news |
+| **Company News Agent** | News gathering | Monitors earnings, insider activity, M&A, analyst actions via Alpaca news + SEC EDGAR |
+| **Execution Agent** | Trade execution | Session-aware (ET timezone), PDT compliance, VWAP order splitting, fill confirmation, retry logic |
+| **Intraday Agent** | Intraday trading | VWAP reversion, opening range breakout, momentum burst, gap analysis. Asymmetric long/short (overnight premium) |
+| **Research Agent** | Report generation | Weekly institutional-grade research report via Claude Sonnet |
 
-### Trading Agent
-- Real-time price monitoring across Binance and Coinbase
-- Momentum-based trade signal generation
-- Cross-exchange arbitrage detection (spread scanning, profit calculation net of fees)
-- Configurable risk limits: max trade size, daily volume caps, position limits
-- Human approval workflow for trades above threshold
-- Full decision logging for every trade (executed or rejected)
+## ML Models
 
-**Heartbeat:** Every 5 minutes — fetches prices, checks stop-losses, scans arbitrage, evaluates signals.
+### CS_Multi_Model_Trading_System (Separate Repo)
 
-### Portfolio Agent
-- Multi-exchange balance aggregation (Binance, Coinbase, on-chain wallets)
-- Real-time allocation tracking vs configurable target percentages
-- Drift detection with automatic rebalance proposals
-- Daily/weekly/monthly performance reporting with risk metrics
-- Always requires human approval before executing rebalance trades
+Three alpha models rank ~100 S&P 500 stocks by predicted 10-day forward return:
 
-**Heartbeat:** Daily at 6 AM — full portfolio snapshot, drift check, report generation.
+| Model | Architecture | Complexity | Sharpe | Max DD | Role |
+|-------|-------------|-----------|--------|--------|------|
+| **CrossMamba** | Selective state-space (Mamba) | O(n) linear | 2.36 | -9.2% | Primary — best risk-adjusted returns |
+| **TST** | Time Series Transformer | O(n²) quadratic | 2.31 | -9.3% | Secondary |
+| **LightGBM** | Gradient boosting ensemble | O(n log n) | 1.56 | -20.2% | Fallback (runs on any platform) |
 
-### DeFi Agent
-- Multi-chain wallet monitoring (Ethereum, Polygon, Arbitrum, Base)
-- Token swap quotes via 1inch aggregator
-- Uniswap V3 transaction building (ERC-20 approvals with exact amounts, never unlimited)
-- Governance proposal tracking via Snapshot.org GraphQL API
-- Voting power lookup across 6 protocols (Uniswap, Aave, Compound, Curve, Lido, SushiSwap)
-- Gas price monitoring with configurable max gas limits
-- Liquidity position health monitoring (impermanent loss, health factor alerts)
+**Feature pipeline:** 186 raw features → 50 selected via stability-based IC screening
+- Price/volume: momentum, mean reversion, volatility, volume, technicals (100 features)
+- Fundamentals: PE, ROE, margins, earnings, analyst targets (40 features)
+- Cross-asset: VIX regime, yield curve, credit spreads, oil, gold, dollar (36 features)
+- Sentiment: news sentiment from Alpaca + Claude Haiku LLM analysis (10 features)
 
-**Heartbeat:** Every 15 minutes — balance check, position risk monitoring, gas tracking.
+**Training methodology (López de Prado):**
+- Walk-forward validation with purge gap (10 days) and embargo (5 days)
+- Triple barrier labeling (target/stop/timeout, not fixed-horizon returns)
+- Sample uniqueness weighting (overlapping samples downweighted)
+- Fractional differentiation (d=0.4, stationary while preserving memory)
+- Retrained every 14 days via GitHub Actions on Linux
 
-### Finance Agent
-- Receipt OCR via Ollama vision models (llava) — extracts merchant, amount, date, payment method, line items
-- Confidence scoring on OCR results
-- Auto-categorization with learning (remembers your merchant → category corrections)
-- Bank transaction sync via Plaid API (token exchange, transaction fetching, receipt matching)
-- Monthly budget tracking with 80%/90% threshold alerts
-- Tax document organization and quarterly summaries
-- Proactive tax deadline reminders
+### Intraday Model
 
-**Heartbeat:** Weekly Monday 7 AM (expense report), daily 9 AM (budget alerts).
+Separate LightGBM model predicting 1-hour forward returns:
 
-### Legal & Compliance Agent
-- Contract analysis using local LLM only (Ollama) — documents never leave your machine
-- Extracts parties, terms, obligations, risk flags, key dates from contracts
-- SEC EDGAR integration — monitors filings (10-K, 10-Q, 8-K, S-1, DEF 14A, 13F) for tracked entities
-- GDPR compliance scanner — checks cookie consent, privacy policy, trackers, security headers, form encryption
-- Legal research via CourtListener API with verified court citations
-- LLM synthesis of research with real citations clearly separated from unverified ones
-- Contract renewal tracking with 30-day and 7-day alerts
+- **Features:** VWAP distance, volume profile, order flow imbalance, Kyle's lambda, VPIN, Amihud illiquidity, Roll's spread, autocorrelation, SPY correlation (30+ features)
+- **Labeling:** Triple barrier (volatility-adaptive bands)
+- **Training:** Purged walk-forward with 60-bar embargo + sample uniqueness weights
+- **Meta-labeling:** Secondary model predicts whether primary is correct → sizes bets
+- **Retrains:** Daily on yesterday's intraday data
 
-**Heartbeat:** SEC filings every 4 hours, contract renewals daily 8 AM, GDPR scans weekly Monday 2 AM.
+## Intraday Trading Signals
 
-## Infrastructure
+Four signal types, each with ATR-adaptive per-symbol thresholds:
 
-### Database
-SQLite with WAL mode for concurrent write safety. Replaces JSON file storage with queryable, transactional persistence. All tables include proper indexes for query performance.
+| Signal | Setup | Hold Time | How It Works |
+|--------|-------|-----------|-------------|
+| **VWAP Reversion** | Price deviates >1.5 ATR from VWAP | ~90 min | Fades to VWAP. Institutional benchmark signal |
+| **Opening Range Breakout** | Price breaks first-30-min high/low | ~3 hours | Momentum continuation after opening range forms |
+| **Momentum Burst** | 1 ATR move in 5 bars + 2x avg volume | ~60 min | Captures institutional flow-driven moves |
+| **Gap Analysis** | Fade small gaps (<0.5 ATR), continue large gaps (>1.5 ATR) | ~2 hours | ATR-relative, not fixed percentage |
 
-### Encryption at Rest
-Fernet symmetric encryption (AES-128-CBC with HMAC-SHA256) for sensitive fields:
-- Payment methods in expense records
-- Contract summaries (confidential documents)
-- Trade metadata
+**Asymmetric management (overnight premium effect):**
+- Intraday longs need higher conviction (0.65 vs 0.50) and better R:R (1.5:1 vs 1.0:1)
+- Longs have tighter trailing stops (lock profits fast — intraday drag)
+- Shorts have wider trailing stops (let winners run — aligned with intraday weakness)
+- Research basis: Cliff Asness, "The Overnight Return" — most equity returns happen overnight
 
-Requires `DATA_ENCRYPTION_KEY` in environment. Supports key rotation.
+## Position Management
 
-### Resilience
-- **Retry with exponential backoff** — configurable attempts, delay, jitter, and retryable exception types on all external API calls
-- **Circuit breakers** — per-exchange (Binance, Coinbase, Alchemy) with configurable failure threshold, recovery timeout, and half-open testing
-- **Rate limiting** — token bucket limiter (20 trades/min, 60 API calls/min, 10 SEC calls/min)
-- **Timeout management** — async timeout wrapper for all external calls
+After entry, each intraday position is actively managed:
 
-### Access Control (RBAC)
-Five roles with granular permissions across 20+ actions:
+**Trailing stops (asymmetric):**
+- Longs: breakeven at 35%, lock 60% at 60%, lock 80% at target
+- Shorts: breakeven at 50%, lock 40% at 75%, lock 65% at target
 
-| Role | Can Trade | Can View | Can Approve | Audit Log | Manage |
-|------|-----------|----------|-------------|-----------|--------|
-| Admin | Yes | Yes | Yes | Yes | Yes |
-| Trader | Yes | Yes | Yes | No | No |
-| Viewer | No | Yes | No | No | No |
-| Compliance | No | Yes | No | Yes | No |
-| Operator | No | Yes | No | Yes | Agents |
+**Partial profit-taking:**
+- Longs: 1/3 at 40% of target, 1/2 at 75% (aggressive — take profits fast)
+- Shorts: 1/4 at 60% of target, 1/2 at target (patient — let it run)
 
-Agent-level restrictions allow limiting users to specific agents (e.g., a trader can only access trading-agent and portfolio-agent).
+**Signal invalidation:** VWAP shift >0.5%, max loss >2x initial risk, time decay
 
-### Session Mapping
-Bridges messaging platform identities to RBAC users:
-- Telegram user IDs, WhatsApp phone numbers, Slack user IDs → RBAC users
-- Pairing code flow for new unknown senders
-- Cross-platform isolation (same phone number on Telegram vs WhatsApp → different sessions)
+**Correlation filtering:** Max 2 signals per sector per signal type. 5 tech stocks triggering simultaneously = take best 2, not all 5.
 
-### Dead Letter Queue
-Persistent queue for failed financial operations:
-- Tracks partial execution (arbitrage buy succeeded but sell failed)
-- Retry counting with configurable max retries
-- Auto-escalation for entries pending too long
-- Resolve/abandon/escalate workflow for manual intervention
+## Risk Management
 
-### Startup Reconciliation
-On boot, automatically:
-- Detects trades stuck in PENDING status (may have filled on exchange while down)
-- Expires stale approval requests and routes to DLQ
-- Checks DLQ health and auto-escalates old entries
-- Enforces data retention policies
+### Pre-Trade Risk Limits (Hard, Cannot Override)
 
-### Monitoring
-- **Prometheus metrics** — 30+ fintech-specific counters, gauges, and histograms exposed on `:9090/metrics`
-- **Grafana dashboards** — pre-provisioned datasource, ready for dashboard import
-- **9 alerting rules** — circuit breaker trips, volume limits, portfolio drift, gas prices, GDPR issues, error rates, missed heartbeats
-- **Health checks** — checks Ollama, Binance, Coinbase, database; reports latency and circuit breaker state
-- **Audit logging** — every financial action logged with timestamp, agent, action, and details to SQLite
+| Limit | Value | Why |
+|-------|-------|-----|
+| Max gross exposure | 200% | Reg T margin requirement |
+| Max net exposure | 80% | Prevents full directional bet |
+| Max single position | 10% of equity | Diversification |
+| Max daily loss | -3% | Halt all trading for the day |
+| Max positions | 30 | Prevents overtrading |
+| Min equity | $25,000 | PDT rule compliance |
+| Max trades/day | 50 | Prevents churning |
+| Max sector concentration | 30% | Sector diversification |
 
-### Human Approval Workflow
-Configurable thresholds for when actions require human approval:
-- Trades over $200 → approval required
-- All portfolio rebalances → approval required
-- DeFi swaps over $100 → approval required
-- Governance votes → always notify-only (human decides)
+### Market Manipulation Safeguards
 
-Approval requests are sent via the user's messaging channel with approve/deny commands.
+| Threat | Detection | Action |
+|--------|-----------|--------|
+| Pump & dump | Volume >5x 20-day average | Block new entries |
+| Spoofing | Spread >5x normal | Block — market maker pulled quotes |
+| Stop hunting | Price move >5x ATR | Block — anomalous move |
+| Momentum ignition | Directional burst + volume spike | Block — designed to trigger algos then reverse |
+| Flash crash | SPY down >3% intraday or VIX >40 | Halt ALL new positions |
+| Wash trading | Buy + sell same stock within 5 min | Block — illegal under SEC rules |
+| Fat finger | Order >10% of equity or >$100k | Block — obvious error |
 
-## Project Structure
+### Risk Model (CS System)
+
+- Multi-speed regime detector: fast (5/20d) + medium (20/50d) + slow (50/200d), weighted 0.2/0.3/0.5
+- Tail risk protection: gap-down (>3% → halve exposure), vol spike (2x → cut 40%), 3+ consecutive down days (cut 30%)
+- Barra-style factor neutralization with sector neutrality
+- Volatility targeting with drawdown control
+- Volatility-dependent transaction costs (1-3x base during high vol)
+
+## Alpha Optimization
+
+### Kelly Criterion Position Sizing
+Positions sized by mathematically optimal fraction of capital. Quarter-Kelly (25%) captures 75% of growth rate with much lower variance. Higher conviction = larger position.
+
+### Transaction Cost-Aware Filtering
+Trades where expected return < 3x round-trip cost (72 bps) are skipped. Prevents churning — the #1 destroyer of quant fund returns.
+
+### Alpha Decay Tracking
+Signals decay exponentially. Momentum signals (fast decay) execute immediately. Fundamental signals (slow decay) can wait for better price.
+
+### Dynamic Ensemble Weighting
+Model weights shift toward whichever has highest recent Information Coefficient. Adapts to changing market regimes automatically.
+
+### Market Impact Estimation (Almgren-Chriss)
+Estimates how our order moves the price. Orders with >10 bps estimated impact use VWAP splitting. Saves 10-40 bps per trade on illiquid names.
+
+## Adaptive Learning
+
+The system evolves over time via exponential decay weighting:
+
+1. **Every decision is recorded** — analyst theses, PM decisions, CIO selections
+2. **After 10 trading days**, predictions are scored against realized returns
+3. **Weights update**: agents that were right recently get more influence
+4. **Safeguards**: 0.95 decay factor (slow adaptation), 8% minimum weight floor, 5 minimum samples before adapting
+
+Example evolution:
+```
+Week 1:  All analysts start at equal weight (1.0x)
+Week 3:  Momentum analyst was right → 1.05x. Risk analyst was wrong → 0.97x
+Week 6:  Weights converge. Best analysts at 1.2x, worst at 0.8x
+Market shifts: Risk analyst correctly predicted selloff → weight recovers
+```
+
+## Production Schedule
+
+```
+ 6:30 AM ET  Check for retrained models (git pull from GitHub Actions)
+ 7:00 AM     Pre-market briefing (news, gaps, overnight events)
+ 9:30 AM     Market opens — NO TRADING (opening noise)
+10:00 AM     Daily cycle: ML → 5 analysts → 3 PMs → CIO → execute
+10:15 AM     First intraday scan
+10:15-3:00   Intraday scans every 15 minutes
+ 3:00-3:30   POWER HOUR: scans every 5 minutes
+ 3:30        Begin closing intraday positions
+ 3:45        Aggressive close — all intraday must be flat
+ 4:00 PM     Market close
+ 4:05        P&L snapshot + position reconciliation
+ 4:15        Weekly research report (Fridays only)
+ 4:30        Feedback loop (score predictions, update agent weights)
+ 5:00        Intraday model retrain (on today's data)
+```
+
+GitHub Actions runs on the 1st and 15th of each month to retrain CrossMamba + LightGBM.
+
+## Directory Structure
 
 ```
 openclaw-fintech/
-├── gateway/
-│   ├── config.yaml          # Gateway config: channels, routing, cron, guardrails
-│   └── .env.example         # API keys template
-├── workspaces/
-│   ├── router/              # Router agent identity and rules
-│   ├── trading-agent/       # SOUL.md, AGENTS.md, HEARTBEAT.md, WORKING.md
-│   ├── portfolio-agent/
-│   ├── defi-agent/
-│   ├── finance-agent/
-│   └── legal-agent/
+├── cli.py                          # Production CLI interface
+├── Dockerfile                      # Docker deployment
+├── docker-compose.yml              # Container orchestration
+├── gateway/.env                    # API keys (not committed)
+│
 ├── skills/
-│   ├── shared/              # Core infrastructure
-│   │   ├── approval.py      # Human-in-the-loop approval workflow
-│   │   ├── config.py        # Shared configuration and utilities
-│   │   ├── database.py      # SQLite database layer with encryption
-│   │   ├── dead_letter.py   # Dead letter queue for failed operations
-│   │   ├── encryption.py    # Fernet encryption at rest
-│   │   ├── health.py        # Health checks and liveness probes
-│   │   ├── metrics.py       # Prometheus metrics collection
-│   │   ├── rbac.py          # Role-based access control
-│   │   ├── resilience.py    # Retry, circuit breaker, rate limiter
-│   │   ├── session_mapper.py # Platform identity → RBAC mapping
-│   │   └── startup.py       # Startup state reconciliation
-│   ├── trading/
-│   │   ├── exchange_client.py # Binance + Coinbase API clients
-│   │   ├── strategy.py       # Momentum signals, arbitrage detection
-│   │   ├── handlers.py        # Skill handlers (heartbeat, execute, etc.)
-│   │   └── skill.yaml         # OpenClaw skill definition
-│   ├── portfolio/
-│   │   ├── handlers.py        # Rebalancing engine, performance reports
-│   │   └── skill.yaml
-│   ├── defi/
-│   │   ├── web3_client.py     # Multi-chain RPC client
-│   │   ├── transaction_builder.py # EVM transaction construction
-│   │   ├── governance.py      # Snapshot.org GraphQL integration
-│   │   ├── handlers.py
-│   │   └── skill.yaml
-│   ├── finance/
-│   │   ├── receipt_ocr.py     # Ollama vision receipt extraction
-│   │   ├── plaid_client.py    # Plaid bank sync
-│   │   ├── handlers.py
-│   │   └── skill.yaml
-│   └── legal/
-│       ├── courtlistener.py   # CourtListener API for case law
-│       ├── handlers.py        # Contract analysis, SEC, GDPR
-│       └── skill.yaml
-├── tests/                     # 111 tests
-├── docker/
-│   ├── docker-compose.yaml    # Gateway + Ollama + Prometheus + Grafana
-│   ├── prometheus.yml         # Scrape config
-│   ├── alerts.yml             # Alerting rules
-│   └── grafana/               # Dashboard provisioning
-├── scripts/
-│   ├── setup.sh               # One-command deployment
-│   └── add_sec_entity.sh      # Add SEC-tracked companies
-├── survey.md                  # OpenClaw fintech survey report
-├── requirements.txt
-└── pyproject.toml
+│   ├── analyst/                    # 5 analyst personalities
+│   │   ├── handlers.py             # form_thesis(), form_all_theses()
+│   │   ├── scoring.py              # Deterministic conviction scoring
+│   │   ├── personalities.py        # Signal weights, model weights, risk profiles
+│   │   └── presets.py              # Parameter interpolation by conviction
+│   │
+│   ├── pm/                         # 3 PM personalities + CIO
+│   │   ├── handlers.py             # resolve(), apply_approved_params()
+│   │   └── resolution.py           # Conviction blending, CIO selection, approval gates
+│   │
+│   ├── intel/                      # Market intelligence
+│   │   ├── handlers.py             # gather_briefing(), pre_market_briefing()
+│   │   └── regime.py               # VIX regime, breadth, cross-asset signals
+│   │
+│   ├── execution/                  # Trade execution
+│   │   ├── handlers.py             # execute_daily(), execute_intraday(), close_intraday()
+│   │   ├── session.py              # Market hours, PDT compliance, EOD detection
+│   │   ├── order_manager.py        # Fill polling, retry, idempotency
+│   │   ├── order_splitter.py       # VWAP splitting for large orders
+│   │   ├── safeguards.py           # Manipulation detection (7 checks)
+│   │   ├── risk_limits.py          # Hard pre-trade limits (8 checks)
+│   │   └── alpha_optimization.py   # Kelly sizing, cost filtering, impact estimation
+│   │
+│   ├── intraday/                   # Intraday trading
+│   │   ├── signals.py              # VWAP, ORB, momentum burst, gap analysis
+│   │   ├── scanner.py              # ML-filtered scanning, asymmetric thresholds
+│   │   ├── calibration.py          # ATR-adaptive thresholds, correlation filtering
+│   │   ├── position_manager.py     # Trailing stops, partial profits, invalidation
+│   │   └── model/                  # Intraday ML model
+│   │       ├── features.py         # 30+ intraday features + microstructure
+│   │       ├── microstructure.py   # OFI, Kyle's lambda, VPIN, Amihud, Roll spread
+│   │       ├── labeling.py         # Triple barrier, sample uniqueness weights
+│   │       ├── meta_labeling.py    # Secondary model for bet sizing
+│   │       └── predictor.py        # LightGBM with purged walk-forward
+│   │
+│   ├── news/                       # News gathering (3 agents)
+│   │   ├── gatherers.py            # Macro, sector, company news from Alpaca
+│   │   ├── aggregator.py           # Combines all sources into NewsDigest
+│   │   ├── edgar.py                # SEC EDGAR filings + insider trading
+│   │   ├── fred.py                 # FRED economic data releases
+│   │   ��── llm_sentiment.py        # Claude Haiku analysis (~$0.02/day)
+│   │
+│   ├── research/                   # Weekly reports
+│   │   └── report.py               # Claude Sonnet institutional research report
+│   │
+│   ├── orchestrator/               # Pipeline coordination
+│   │   ├── pipeline.py             # run_daily_cycle(), run_intraday_cycle()
+│   │   ├── scheduler.py            # Institutional-grade cron schedule
+│   │   └── checkpoint.py           # Crash recovery, prevents double-trading
+│   │
+│   ├── signals/                    # ML model bridge
+│   │   └── bridge.py               # Loads CrossMamba/LightGBM, patches data pipeline
+│   │
+│   ├── market_data/                # Professional data provider
+│   │   ├── provider.py             # Alpaca Data API v2 (bars, snapshots, news)
+│   │   ├── adapter.py              # yfinance-compatible interface for CS system
+│   │   ├── fmp.py                  # Financial Modeling Prep (ready for API key)
+│   │   └── models.py               # Bar, NewsArticle, Snapshot dataclasses
+│   │
+│   ├── pnl/                        # Performance tracking
+│   │   ├── tracker.py              # SQLite P&L: daily returns, Sharpe, drawdown
+│   │   └── reconciliation.py       # Verify system state vs Alpaca positions
+│   │
+│   ├── feedback/                   # Adaptive learning
+│   │   ├── scorer.py               # Score past predictions against outcomes
+│   │   ├── adapter.py              # Exponential decay weight adjustment
+│   │   └── loop.py                 # Daily learning cycle + retrain trigger
+│   │
+│   ├── shared/                     # Infrastructure (from OpenClaw)
+│   │   ├── config.py               # Logging, audit trail, limits, allowed pairs
+│   │   ├── approval.py             # SQLite-backed approval workflow
+│   │   ├─��� resilience.py           # Retry, circuit breakers, rate limiting
+│   │   ├── alerting.py             # Slack/Discord webhook alerts
+│   │   ├── state.py                # Safe JSON I/O (atomic writes, corruption handling)
+│   │   ├── secrets.py              # Secret management abstraction
+│   │   ├── structured_logging.py   # JSON logging for ELK/CloudWatch
+│   │   ├── encryption.py           # Data-at-rest encryption
+│   │   ├── metrics.py              # Prometheus-compatible metrics
+│   │   ├── health.py               # Health check endpoints
+│   │   └── rbac.py                 # Role-based access control
+│   │
+│   ├── trading/                    # Exchange clients (from OpenClaw)
+│   │   ├── exchange_client.py      # Alpaca, Binance, Coinbase clients
+│   │   └── strategy.py             # Risk checks, momentum signals
+���   │
+│   └── legal/                      # Compliance (from OpenClaw)
+│       └── handlers.py             # SEC EDGAR, GDPR scanning, contract analysis
+│
+├── tests/                          # 211 tests
+│   ├── test_quant_agents.py        # Scoring, personalities, PM, CIO, session
+│   ├── test_intraday.py            # Signals, ATR, correlation, position mgmt
+│   ├── test_pnl.py                 # P&L tracking, reconciliation
+│   ├── test_checkpoint.py          # Crash recovery
+│   ├��─ test_feedback.py            # Adaptive learning
+│   ├── test_fmp.py                 # FMP integration
+│   ├── test_order_manager.py       # Fill polling, retry
+│   └── ...                         # Approval, encryption, resilience, etc.
+│
+├── data/                           # Runtime data (gitignored)
+│   ├── pnl.db                      # P&L tracking database
+│   ├── approvals.db                # Approval workflow database
+│   ├── feedback.db                 # Prediction scoring database
+│   └── *.csv, *.json               # Cached market data
+│
+└── workspaces/                     # Agent state (gitignored)
+    ├── pm-agent/state.json
+    ├── execution-agent/state.json
+    ├── intel-agent/state.json
+    └── orchestrator/checkpoints/
 ```
 
-## Quick Start
+## Running the System
 
-### Prerequisites
-- Docker and Docker Compose
-- API keys for at least one exchange (Binance or Coinbase)
-- A messaging platform bot token (Telegram recommended for testing)
-
-### Setup
-
+### Interactive CLI
 ```bash
-# 1. Clone
-git clone https://github.com/Kymi808/openclaw-fintech.git
-cd openclaw-fintech
-
-# 2. Configure
-cp gateway/.env.example gateway/.env
-# Edit gateway/.env with your API keys
-
-# 3. Deploy
-./scripts/setup.sh
+cd /Users/kylezeng/VSNX/openclaw-fintech
+python cli.py
 ```
 
-This starts:
-- OpenClaw Gateway on `ws://localhost:18789`
-- Web UI on `http://localhost:3000`
-- Ollama (local LLM) on `http://localhost:11434`
-- Prometheus on `http://localhost:9091`
-- Grafana on `http://localhost:3001`
-- Log viewer on `http://localhost:8080`
+Commands:
+- `run cycle` — full daily pipeline: ML → debate → trade
+- `scan` — intraday signal scan
+- `briefing` — market intelligence report
+- `portfolio` — current positions + exposure
+- `positions` — detailed Alpaca position list
+- `pnl` — P&L report
+- `reconcile` — verify positions vs Alpaca
+- `news` — aggregated news from 5 sources
+- `report` — weekly research report (Claude)
+- `analysts` — all 5 analyst convictions
+- `pm status` — PM parameters + last decision
+- `feedback` — adaptive weight status
+- `approve APR-XXXXX` / `deny APR-XXXXX` — approval workflow
+- `secrets` — verify API key configuration
+- `health` — system health check
 
-### First Message
-
-Send a message to your bot on Telegram:
-
-```
-"What's the price of BTC?"
-```
-
-The router will triage this to the trading agent, which will fetch prices from Binance and Coinbase and respond with a formatted market update.
-
-### Add SEC Monitoring
-
+### Autonomous Scheduler
 ```bash
-# Track Apple (CIK: 320193)
-./scripts/add_sec_entity.sh 320193 "Apple Inc."
+python -m skills.orchestrator.scheduler
+```
 
-# Track Tesla (CIK: 1318605)
-./scripts/add_sec_entity.sh 1318605 "Tesla Inc."
+### Docker Deployment
+```bash
+docker compose up -d
 ```
 
 ## Configuration
 
-### Environment Variables
-
-See `gateway/.env.example` for all required and optional variables. Key ones:
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `ANTHROPIC_API_KEY` | Yes | LLM provider for agent reasoning |
-| `TELEGRAM_BOT_TOKEN` | Yes* | At least one messaging channel required |
-| `BINANCE_API_KEY` | For trading | Binance spot trading API key |
-| `COINBASE_API_KEY` | For trading | Coinbase Advanced Trade API key |
-| `ALCHEMY_API_KEY` | For DeFi | Ethereum/L2 RPC provider |
-| `PLAID_CLIENT_ID` | For banking | Plaid bank sync |
-| `DATA_ENCRYPTION_KEY` | Yes | Encryption key for sensitive data at rest |
-| `SEC_EDGAR_USER_AGENT` | For SEC | Required by SEC EDGAR API |
-
-### Risk Limits
-
-Edit `skills/shared/config.py` or each agent's `AGENTS.md`:
-
-```python
-DEFAULT_LIMITS = {
-    "max_single_trade": 100.0,    # Max $100 per trade
-    "max_daily_volume": 500.0,    # Max $500/day total
-    "max_open_positions": 5,      # Max 5 open positions
-    "approval_threshold": 200.0,  # Require approval above $200
-    "stop_loss_pct": 5.0,         # 5% stop-loss on all positions
-}
+### Required (gateway/.env)
+```
+ALPACA_API_KEY=your_key
+ALPACA_API_SECRET=your_secret
+ALPACA_BASE_URL=https://paper-api.alpaca.markets
 ```
 
-### Portfolio Targets
-
-Create `workspaces/portfolio-agent/config.json`:
-
-```json
-{
-  "targets": {
-    "BTC": 0.40,
-    "ETH": 0.30,
-    "SOL": 0.10,
-    "USDT": 0.15,
-    "OTHER": 0.05
-  },
-  "drift_threshold": 0.05
-}
+### Optional
+```
+ANTHROPIC_API_KEY=sk-ant-...    # LLM sentiment + research reports
+FMP_API_KEY=your_key            # Financial Modeling Prep fundamentals
+FRED_API_KEY=your_key           # FRED economic data (has free tier)
+ALERT_WEBHOOK_URL=https://...   # Slack/Discord alerts
+SEC_EDGAR_USER_AGENT=Company contact@company.com
 ```
 
-## Testing
+## Cost
 
-```bash
-# Install dependencies
-pip install -r requirements.txt
+| Component | Cost |
+|-----------|------|
+| Alpaca (trading + IEX data) | Free |
+| Claude Haiku (LLM sentiment) | ~$0.04/week |
+| Claude Sonnet (weekly report) | ~$0.07/week |
+| GitHub Actions (model retraining) | Free |
+| SEC EDGAR, FRED | Free |
+| **Total (Mac)** | **~$0.11/week** |
+| + Linux server (CrossMamba) | +$1.50/week |
+| + FMP fundamentals | +$7.25/week |
 
-# Run all 111 tests
-PYTHONPATH=. pytest tests/ -v
+## Key Design Decisions
 
-# Run specific test modules
-PYTHONPATH=. pytest tests/test_strategy.py -v     # Trading strategy
-PYTHONPATH=. pytest tests/test_encryption.py -v   # Encryption
-PYTHONPATH=. pytest tests/test_resilience.py -v   # Retry/circuit breakers
-PYTHONPATH=. pytest tests/test_database.py -v     # Database layer
-PYTHONPATH=. pytest tests/test_rbac.py -v         # Access control
-```
+1. **Deterministic scoring, not LLM decisions.** Analyst convictions and PM resolutions use weighted signal functions, not LLM text generation. This makes the system reproducible, testable, and debuggable. Claude is used only for human-readable explanations and news sentiment analysis.
 
-### Test Coverage
+2. **CrossMamba as primary model.** Best Sharpe (2.36) and lowest drawdown (-9.2%) in backtests. Trains on GitHub Actions (Linux) because PyTorch's selective scan segfaults on macOS ARM. LightGBM is the local fallback.
 
-| Module | Tests | Covers |
-|--------|-------|--------|
-| Encryption | 8 | Roundtrip, key rotation, ephemeral keys, unicode, large content |
-| Database | 11 | CRUD, encrypted fields, monthly aggregation, retention, concurrent writes |
-| Approval | 8 | Create, approve, deny, auto-approve logic, timeout, formatting |
-| RBAC | 10 | All 5 roles, agent-level restrictions, inactive users, permission enforcement |
-| Resilience | 10 | Retry backoff, circuit breaker states, rate limiting, timeout |
-| Strategy | 14 | Risk limits, arbitrage detection, momentum signals, formatting |
-| Metrics | 8 | Counters, gauges, histograms, Prometheus export |
-| GDPR | 2 | Missing consent detection, clean site validation |
-| Receipt OCR | 9 | JSON parsing, amount/date normalization, confidence scoring, error handling |
-| Session Mapper | 10 | Registration, pairing flow, cross-platform isolation, inactive users |
-| Dead Letter | 8 | Enqueue, resolve, abandon, escalate, retry counting, filtering |
-| Plaid | 7 | Category mapping, configuration check |
+3. **Asymmetric intraday trading.** Research shows most equity returns happen overnight (close→open), not intraday. Intraday longs face a structural headwind. The system requires higher conviction for long intraday trades and manages them more aggressively.
 
-## Security Considerations
+4. **Agent debate is structured, not conversational.** Five analysts score signals simultaneously using different weight vectors. Three PMs blend the scores. CIO selects based on conditions. This is an ensemble-of-opinions, not an LLM chat.
 
-- **Local-first**: Contract analysis uses Ollama — confidential documents never leave your machine
-- **Exact token approvals**: DeFi agent never approves unlimited ERC-20 allowances
-- **Encrypted at rest**: Payment methods, contract summaries, and trade metadata are encrypted in the database
-- **No secrets in logs**: `mask_sensitive()` applied to card numbers and account IDs
-- **Circuit breakers**: Prevent cascading failures from taking down the whole system
-- **RBAC enforcement**: Every action checked against role permissions before execution
-- **Pairing codes**: Unknown messaging senders cannot interact without admin-approved pairing
-- **Audit trail**: Every financial action logged with full context
+5. **Feedback loop with safeguards.** Weights adapt based on realized performance, but slowly (0.95 decay factor) with minimum floors (8%). This prevents overfitting to recent noise while still learning from experience.
 
-### What This Does NOT Provide
-- SOC 2 / PCI-DSS certification (requires external audit)
-- Hardware wallet integration for DeFi signing (requires physical infrastructure)
-- Penetration testing (requires external security firm)
-- Legal compliance review (requires qualified counsel)
-- Financial advice (the agents summarize and execute — they do not advise)
+6. **Pre-trade safeguards are hard limits.** Even if the PM approves aggressive parameters, manipulation detection and risk limits block dangerous trades. These cannot be overridden.
 
-## License
-
-MIT
-
-## Disclaimer
-
-This software is provided as-is under the MIT license. It is **not financial advice**. Autonomous trading bots can lose money. Always:
-- Start with small amounts and manual approval for everything
-- Test thoroughly in sandbox/testnet environments before using real funds
-- Consult qualified legal and financial professionals
-- Understand that you bear full responsibility for any financial losses
+7. **Training and inference use the same data pipeline.** Both GitHub Actions (training) and the local bridge (inference) use the Alpaca data adapter. No train/test mismatch.
