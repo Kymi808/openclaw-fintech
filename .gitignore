@@ -25,3 +25,15 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+
+# Cached data (regenerated at runtime)
+data/*.csv
+data/*.json
+data/*.db
+
+# Workspace state (regenerated at runtime)
+workspaces/*/state.json
+workspaces/orchestrator/checkpoints/
+
+# Sentiment cache
+data/sentiment_cache.json

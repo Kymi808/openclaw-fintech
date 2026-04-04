@@ -1,0 +1,31 @@
+version: "3.8"
+
+services:
+  trading-scheduler:
+    build: .
+    container_name: openclaw-scheduler
+    env_file: gateway/.env
+    environment:
+      - PYTHONPATH=/app
+      - TZ=America/New_York
+    volumes:
+      - ./data:/app/data                    # persist SQLite DBs
+      - ./workspaces:/app/workspaces        # persist agent state
+      - ./logs:/app/logs                    # persist log files
+    restart: unless-stopped
+    command: python -m skills.orchestrator.scheduler
+
+  demo:
+    build: .
+    container_name: openclaw-demo
+    env_file: gateway/.env
+    environment:
+      - PYTHONPATH=/app
+    volumes:
+      - ./data:/app/data
+      - ./workspaces:/app/workspaces
+    stdin_open: true
+    tty: true
+    command: python demo.py
+    profiles:
+      - demo  # only starts with: docker compose --profile demo up demo
