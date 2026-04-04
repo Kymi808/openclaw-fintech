@@ -1,14 +1,33 @@
 """
 Human-in-the-loop approval workflow for financial actions.
+
+SQLite-backed for persistence across process restarts.
+Supports: create, approve, deny, expire, query history.
 """
-import asyncio
+import json
+import os
+import sqlite3
+import numpy as np
+
+
+def _json_default(obj):
+    """Handle numpy types in JSON serialization."""
+    if isinstance(obj, (np.bool_, np.integer)):
+        return int(obj)
+    if isinstance(obj, np.floating):
+        return float(obj)
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from enum import Enum
 from typing import Optional
 from .config import audit_log, get_logger
 
 logger = get_logger("approval")
+
+DB_PATH = os.path.join("data", "approvals.db")
 
 
 class ApprovalStatus(Enum):
@@ -35,11 +54,45 @@ class ApprovalRequest:
 
 
 class ApprovalEngine:
-    """Manages approval requests for financial actions."""
+    """
+    Manages approval requests for financial actions.
 
-    def __init__(self):
-        self._pending: dict[str, ApprovalRequest] = {}
-        self._counter = 0
+    SQLite-backed: all pending requests survive process restarts.
+    Interface is unchanged from the original in-memory version.
+    """
+
+    def __init__(self, db_path: str = None):
+        self.db_path = db_path or DB_PATH
+        os.makedirs(os.path.dirname(self.db_path) if os.path.dirname(self.db_path) else ".", exist_ok=True)
+        self._init_db()
+
+    def _init_db(self):
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS approval_requests (
+                    req_id TEXT PRIMARY KEY,
+                    agent TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    description TEXT NOT NULL,
+                    amount REAL DEFAULT 0,
+                    details TEXT DEFAULT '{}',
+                    status TEXT DEFAULT 'pending',
+                    created_at TEXT NOT NULL,
+                    resolved_at TEXT,
+                    timeout_seconds INTEGER DEFAULT 300
+                )
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_status ON approval_requests(status)
+            """)
+
+    def _get_next_id(self) -> str:
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) FROM approval_requests"
+            ).fetchone()
+        count = (row[0] if row else 0) + 1
+        return f"APR-{count:06d}"
 
     def should_auto_approve(self, agent: str, action: str, amount: float,
                             limits: dict) -> bool:
@@ -47,10 +100,8 @@ class ApprovalEngine:
         threshold = limits.get("approval_threshold", 200.0)
         if amount <= threshold and action in ("execute_trade", "swap"):
             return True
-        # Rebalance always requires approval
         if action == "rebalance":
             return False
-        # Governance always requires approval
         if action == "governance_vote":
             return False
         return False
@@ -58,16 +109,18 @@ class ApprovalEngine:
     def create_request(self, agent: str, action: str, description: str,
                        amount: float = 0.0, details: dict = None) -> str:
         """Create an approval request and return its ID."""
-        self._counter += 1
-        req_id = f"APR-{self._counter:06d}"
-        req = ApprovalRequest(
-            agent=agent,
-            action=action,
-            description=description,
-            amount=amount,
-            details=details or {},
-        )
-        self._pending[req_id] = req
+        req_id = self._get_next_id()
+        now = datetime.now(timezone.utc).isoformat()
+
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("""
+                INSERT INTO approval_requests
+                (req_id, agent, action, description, amount, details, status, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                req_id, agent, action, description, amount,
+                json.dumps(details or {}, default=_json_default), "pending", now,
+            ))
 
         audit_log(agent, "approval_requested", {
             "request_id": req_id,
@@ -81,41 +134,66 @@ class ApprovalEngine:
 
     def approve(self, req_id: str) -> bool:
         """Approve a pending request."""
-        req = self._pending.get(req_id)
-        if not req or req.status != ApprovalStatus.PENDING:
-            return False
-        req.status = ApprovalStatus.APPROVED
-        req.resolved_at = datetime.now(timezone.utc).isoformat()
-        audit_log(req.agent, "approval_granted", {"request_id": req_id})
-        logger.info(f"Approved: {req_id}")
-        return True
+        return self._resolve(req_id, ApprovalStatus.APPROVED)
 
     def deny(self, req_id: str) -> bool:
         """Deny a pending request."""
-        req = self._pending.get(req_id)
-        if not req or req.status != ApprovalStatus.PENDING:
-            return False
-        req.status = ApprovalStatus.DENIED
-        req.resolved_at = datetime.now(timezone.utc).isoformat()
-        audit_log(req.agent, "approval_denied", {"request_id": req_id})
-        logger.info(f"Denied: {req_id}")
+        return self._resolve(req_id, ApprovalStatus.DENIED)
+
+    def _resolve(self, req_id: str, new_status: ApprovalStatus) -> bool:
+        now = datetime.now(timezone.utc).isoformat()
+        with sqlite3.connect(self.db_path) as conn:
+            result = conn.execute(
+                "UPDATE approval_requests SET status = ?, resolved_at = ? "
+                "WHERE req_id = ? AND status = 'pending'",
+                (new_status.value, now, req_id),
+            )
+            if result.rowcount == 0:
+                return False
+
+        action = "approval_granted" if new_status == ApprovalStatus.APPROVED else "approval_denied"
+        # Get agent for audit
+        req = self._get_request(req_id)
+        if req:
+            audit_log(req.agent, action, {"request_id": req_id})
+
+        logger.info(f"{new_status.value.title()}: {req_id}")
         return True
 
     def get_pending(self) -> list[tuple[str, ApprovalRequest]]:
         """Return all pending approval requests."""
-        return [
-            (rid, req) for rid, req in self._pending.items()
-            if req.status == ApprovalStatus.PENDING
-        ]
+        # First, expire any timed-out requests
+        self._expire_old_requests()
+
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute(
+                "SELECT req_id, agent, action, description, amount, details, "
+                "status, created_at, resolved_at, timeout_seconds "
+                "FROM approval_requests WHERE status = 'pending' ORDER BY created_at"
+            ).fetchall()
+
+        return [(row[0], self._row_to_request(row)) for row in rows]
+
+    def get_history(self, limit: int = 50) -> list[tuple[str, ApprovalRequest]]:
+        """Return recent approval history (all statuses)."""
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute(
+                "SELECT req_id, agent, action, description, amount, details, "
+                "status, created_at, resolved_at, timeout_seconds "
+                "FROM approval_requests ORDER BY created_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+
+        return [(row[0], self._row_to_request(row)) for row in rows]
 
     def format_request_message(self, req_id: str) -> str:
         """Format an approval request for sending to the user."""
-        req = self._pending.get(req_id)
+        req = self._get_request(req_id)
         if not req:
             return f"Unknown request: {req_id}"
 
         msg = (
-            f"⚠️ Approval Required [{req_id}]\n"
+            f"Approval Required [{req_id}]\n"
             f"Agent: {req.agent}\n"
             f"Action: {req.action}\n"
         )
@@ -126,6 +204,50 @@ class ApprovalEngine:
             f"Reply 'approve {req_id}' or 'deny {req_id}'"
         )
         return msg
+
+    def _get_request(self, req_id: str) -> Optional[ApprovalRequest]:
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT req_id, agent, action, description, amount, details, "
+                "status, created_at, resolved_at, timeout_seconds "
+                "FROM approval_requests WHERE req_id = ?",
+                (req_id,),
+            ).fetchone()
+        if not row:
+            return None
+        return self._row_to_request(row)
+
+    def _row_to_request(self, row) -> ApprovalRequest:
+        return ApprovalRequest(
+            agent=row[1],
+            action=row[2],
+            description=row[3],
+            amount=row[4],
+            details=json.loads(row[5]) if row[5] else {},
+            status=ApprovalStatus(row[6]),
+            created_at=row[7],
+            resolved_at=row[8],
+            timeout_seconds=row[9] or 300,
+        )
+
+    def _expire_old_requests(self):
+        """Auto-expire requests that have exceeded their timeout."""
+        now = datetime.now(timezone.utc)
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute(
+                "SELECT req_id, created_at, timeout_seconds "
+                "FROM approval_requests WHERE status = 'pending'"
+            ).fetchall()
+
+            for req_id, created_at, timeout in rows:
+                created = datetime.fromisoformat(created_at)
+                if now - created > timedelta(seconds=timeout):
+                    conn.execute(
+                        "UPDATE approval_requests SET status = 'expired', resolved_at = ? "
+                        "WHERE req_id = ?",
+                        (now.isoformat(), req_id),
+                    )
+                    logger.info(f"Expired: {req_id} (timeout {timeout}s)")
 
 
 # Singleton

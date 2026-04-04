@@ -40,10 +40,11 @@ def encryption_manager():
 
 
 @pytest.fixture
-def approval_engine():
-    """Fresh approval engine for each test."""
+def approval_engine(tmp_path):
+    """Fresh approval engine for each test with isolated SQLite DB."""
     from skills.shared.approval import ApprovalEngine
-    return ApprovalEngine()
+    db_path = str(tmp_path / "test_approvals.db")
+    return ApprovalEngine(db_path=db_path)
 
 
 @pytest.fixture
