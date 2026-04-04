@@ -27,6 +27,8 @@ ET = ZoneInfo("America/New_York")
 # Schedule definitions (hour, minute) in ET
 # Modeled after institutional equity trading desk operations
 SCHEDULE = {
+    # Pre-market: check for retrained models from GitHub Actions
+    "check_model_updates": time(6, 30),
     # Pre-market: scan overnight news, gaps, macro events
     "pre_market_briefing": time(7, 0),
     # Opening: wait for opening range to form (9:30-10:00 is noise)
@@ -94,12 +96,33 @@ async def run_scheduled_task(task_name: str):
         elif task_name == "intraday_model_update":
             from skills.intraday.model.predictor import get_intraday_predictor
             predictor = get_intraday_predictor()
-            # Collect yesterday's data
             n_samples = await predictor.collect_training_data()
             logger.info(f"Collected {n_samples} intraday training samples")
-            # Retrain
             summary = predictor.train()
             logger.info(f"Intraday model: {summary.get('status')}")
+
+        elif task_name == "check_model_updates":
+            # Pull latest CrossMamba/LightGBM models from GitHub
+            # (GitHub Actions retrains every 14 days and pushes new .pkl files)
+            import subprocess
+            cs_path = os.environ.get(
+                "CS_SYSTEM_PATH",
+                os.path.join(os.path.dirname(__file__), "..", "..", "..",
+                             "CS_Multi_Model_Trading_System"),
+            )
+            if os.path.exists(os.path.join(cs_path, ".git")):
+                result = subprocess.run(
+                    ["git", "pull", "--ff-only"],
+                    cwd=cs_path, capture_output=True, text=True, timeout=30,
+                )
+                if "Already up to date" not in result.stdout:
+                    logger.info(f"Model update pulled: {result.stdout.strip()}")
+                    # Clear cached generators so new models are loaded
+                    from skills.signals.bridge import _generators
+                    _generators.clear()
+                    logger.info("Model cache cleared — new models will load on next cycle")
+                else:
+                    logger.debug("No model updates available")
 
         else:
             logger.warning(f"Unknown task: {task_name}")
