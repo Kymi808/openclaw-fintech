@@ -130,7 +130,17 @@ def cio_decide(
 
     drawdown = portfolio_state.get("current_drawdown", 0.0)
 
-    # Safety override
+    # Extract HMM regime data (if available)
+    hmm_regime = "unknown"
+    hmm_confidence = 0.0
+    hmm_probs = {}
+    if briefing:
+        regime = briefing.get("regime", {})
+        hmm_regime = regime.get("hmm_regime", "unknown")
+        hmm_confidence = regime.get("hmm_confidence", 0.0)
+        hmm_probs = regime.get("hmm_probabilities", {})
+
+    # Safety override (hard limits, cannot be overridden)
     if vix > SAFETY_OVERRIDE_VIX or drawdown < SAFETY_OVERRIDE_DRAWDOWN:
         selected = "conservative"
         rationale = (
@@ -139,7 +149,29 @@ def cio_decide(
         )
         logger.warning(f"CIO SAFETY OVERRIDE: {rationale}")
 
-    # Condition-based selection
+    # HMM-based selection (when available and confident)
+    # HMM provides probability distributions — strictly more informative than VIX alone
+    elif hmm_regime != "unknown" and hmm_confidence > 0.6:
+        if hmm_regime == "bear" or hmm_probs.get("bear", 0) > 0.5:
+            selected = "conservative"
+            rationale = (
+                f"HMM regime: bear (P(bear)={hmm_probs.get('bear', 0):.0%}, "
+                f"confidence={hmm_confidence:.0%}). Conservative PM selected."
+            )
+        elif hmm_regime == "bull" and hmm_probs.get("bull", 0) > 0.65:
+            selected = "aggressive"
+            rationale = (
+                f"HMM regime: bull (P(bull)={hmm_probs.get('bull', 0):.0%}). "
+                f"Aggressive PM selected."
+            )
+        else:
+            selected = "balanced"
+            rationale = (
+                f"HMM regime: {hmm_regime} (mixed: bull={hmm_probs.get('bull', 0):.0%}, "
+                f"bear={hmm_probs.get('bear', 0):.0%}). Balanced PM selected."
+            )
+
+    # Fallback: VIX/breadth-based selection (when HMM unavailable)
     elif vix_regime in ("elevated", "crisis") or advance_pct < 0.35:
         selected = "conservative"
         rationale = (

@@ -12,6 +12,11 @@ class RegimeData:
     vix_level: float = 0.0
     vix_change_1d: float = 0.0
     vix_regime: str = "normal"  # "low_vol" | "normal" | "elevated" | "crisis"
+    # HMM regime detection (Hamilton 1989)
+    hmm_regime: str = "unknown"              # "bull" | "sideways" | "bear"
+    hmm_probabilities: dict = field(default_factory=dict)
+    hmm_confidence: float = 0.0
+    hmm_regime_duration: int = 0
     yield_curve_slope: float = 0.0  # TLT vs SHV spread change
     credit_spread: float = 0.0  # HYG vs LQD ratio change
     dollar_trend: float = 0.0  # UUP 5d return
