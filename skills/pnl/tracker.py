@@ -103,6 +103,16 @@ class PnLTracker:
                 )
             """)
             conn.execute("""
+                CREATE TABLE IF NOT EXISTS factor_attribution (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    date TEXT NOT NULL,
+                    factor TEXT NOT NULL,
+                    contribution REAL NOT NULL,
+                    cumulative REAL DEFAULT 0,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            conn.execute("""
                 CREATE TABLE IF NOT EXISTS position_history (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     date TEXT NOT NULL,
