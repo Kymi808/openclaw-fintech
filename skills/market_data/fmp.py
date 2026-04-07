@@ -19,13 +19,19 @@ import os
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
+import logging
+
 import httpx
+
+# Suppress httpx request logging — it leaks API keys in URLs
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 from skills.shared import get_logger
 
 logger = get_logger("market_data.fmp")
 
-FMP_BASE_URL = "https://financialmodelingprep.com/api/v3"
+FMP_BASE_URL = "https://financialmodelingprep.com/stable"
 def _get_fmp_key() -> str:
     return os.getenv("FMP_API_KEY", "")
 
@@ -63,7 +69,7 @@ class FMPProvider:
         await self._client.aclose()
 
     async def _get(self, endpoint: str, params: dict = None) -> dict | list:
-        """Make an authenticated GET request to FMP API."""
+        """Make an authenticated GET request to FMP /stable/ API."""
         params = params or {}
         params["apikey"] = self.api_key
         url = f"{FMP_BASE_URL}/{endpoint}"
@@ -80,12 +86,12 @@ class FMPProvider:
         Returns list of dicts, one per reporting period, most recent first.
         Each dict includes the period end date for point-in-time usage.
         """
-        data = await self._get(f"key-metrics/{symbol}", {"period": period, "limit": limit})
+        data = await self._get("key-metrics", {"symbol": symbol, "period": period, "limit": limit})
         return data
 
     async def get_ratios(self, symbol: str, period: str = "quarter", limit: int = 4) -> list[dict]:
         """Get financial ratios (profitability, liquidity, solvency, etc.)"""
-        data = await self._get(f"ratios/{symbol}", {"period": period, "limit": limit})
+        data = await self._get("ratios", {"symbol": symbol, "period": period, "limit": limit})
         return data
 
     async def get_fundamentals_batch(self, tickers: List[str]) -> Dict[str, dict]:
@@ -200,7 +206,7 @@ class FMPProvider:
 
     async def get_profile(self, symbol: str) -> dict:
         """Get company profile (sector, industry, market cap, beta, etc.)"""
-        data = await self._get(f"profile/{symbol}")
+        data = await self._get("profile", {"symbol": symbol})
         return data[0] if data else {}
 
     async def get_sector_map(self, tickers: List[str]) -> Dict[str, str]:
@@ -220,7 +226,7 @@ class FMPProvider:
 
     async def get_analyst_estimates(self, symbol: str) -> dict:
         """Get analyst consensus estimates."""
-        data = await self._get(f"analyst-estimates/{symbol}", {"limit": 1})
+        data = await self._get("analyst-estimates", {"symbol": symbol, "limit": 1})
         return data[0] if data else {}
 
 
