@@ -73,9 +73,17 @@ The ML layer is provided by the [CS Multi-Model Trading System](https://github.c
 
 **Model Priority**: CrossMamba → TST → LightGBM (falls back to LightGBM on macOS ARM due to PyTorch selective scan segfault).
 
-**Current Performance** (real data, 460 stocks, walk-forward validation):
-- LightGBM Avg Rank IC: 0.063 ± 0.141 (IR: 0.44)
-- Ensemble results: Pending
+**Current Performance** (real data, 460 stocks, 10L/10S neutral, walk-forward validation, 24bp round-trip costs):
+
+| Model | Annual Return | Sharpe | Max Drawdown | Win Rate |
+|-------|-------------|--------|-------------|----------|
+| **CrossMamba** | 35.38% | 3.393 | -13.66% | 59.25% |
+| **TST** | 37.02% | 3.382 | -9.25% | 57.79% |
+| Ensemble | 19.53% | 1.878 | -9.84% | 55.13% |
+| LightGBM | 13.38% | 1.238 | -10.22% | 55.26% |
+| SPY benchmark | 20.67% | 1.378 | -18.76% | 57.14% |
+
+LightGBM Avg Rank IC: 0.063 ± 0.141 (IR: 0.44). Returns are near-neutral (~10% net exposure) — driven by stock selection alpha, not market beta. Caveats: fundamental look-ahead bias (yfinance), single bullish test period (2021-2026). Expect 30-40% degradation live.
 
 Models retrain automatically every 14 days via GitHub Actions on Linux (CrossMamba requires CUDA-compatible environment).
 
