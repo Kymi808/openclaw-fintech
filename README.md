@@ -67,6 +67,316 @@ Signal weights are adapted over time via an exponential decay feedback loop (dec
 3. VIX/breadth fallback: Elevated VIX or weak breadth → conservative, low VIX + strong breadth → aggressive
 4. Default: Balanced
 
+## Data Flow (Detailed)
+
+Five stages, each cross-referenced to the actual file paths. Read this when debugging, wiring a new agent, or tracing why a particular prediction ended up as a particular order.
+
+### Stage A — Scheduler loop (30-second tick)
+
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  skills/orchestrator/scheduler.py :: scheduler_loop()                        │
+│                                                                              │
+│  while running:                                                              │
+│      now = datetime.now(ET)                                                  │
+│      for task in SCHEDULE:                                                   │
+│          if now within 2-min window AND not already fired today:             │
+│              await run_scheduled_task(task)                                  │
+│      sleep(30)                                                               │
+└──────────────────┬───────────────────────────────────────────────────────────┘
+                   │
+     ┌─────────────┼─────────────┬─────────────┬─────────────┬────────────┐
+     ▼             ▼             ▼             ▼             ▼            ▼
+  06:30         07:00         09:32         10:00       10:15-15:30   15:45
+  check_model   pre_market    execute_      daily_      intraday_     eod_
+  _updates      _briefing     pending_      cycle       cycle(s)      close
+  (git pull)    (intel only)  at_open       (FULL       (every 15m,   (liquidate
+                              (replay)      PIPELINE)   5m in power   intraday)
+                                                        hour)
+```
+
+### Stage B — `daily_cycle` pipeline
+
+```
+skills/orchestrator/pipeline.py :: run_daily_cycle()
+
+ ┌───────────────────────────────────────────────────────────────────────┐
+ │  (0) Rate-limit check (MIN_CYCLE_INTERVAL=300s), checkpoint.create()  │
+ └───────────────────────────────────────┬───────────────────────────────┘
+                                         ▼
+ ┌───────────────────────────────────────────────────────────────────────┐
+ │  (1) LOAD PREDICTIONS  →  _load_real_predictions()                    │
+ │      tries models in priority order: lightgbm, crossmamba, tst        │
+ │      ──►  bridge.generate_predictions("lightgbm")   ── see stage C    │
+ │      ──►  predictions: dict[ticker -> score]   (20 entries)           │
+ │      _cache_predictions() writes data/cached_predictions.json         │
+ └───────────────────────────────────────┬───────────────────────────────┘
+                                         ▼
+ ┌───────────────────────────────────────────────────────────────────────┐
+ │  (2) INTEL  →  skills/intel/handlers.py :: gather_briefing()          │
+ │      macro news + sector news + company news (parallel) →             │
+ │      SEC EDGAR filings → FRED economic data →                         │
+ │      HMM regime probabilities → VIX, breadth → briefing dict          │
+ │      checkpoint.update(INTEL_DONE)                                    │
+ └───────────────────────────────────────┬───────────────────────────────┘
+                                         ▼
+ ┌───────────────────────────────────────────────────────────────────────┐
+ │  (3) ANALYSTS  →  analyst/handlers.py :: form_all_theses()            │
+ │      5 personalities run IN PARALLEL (asyncio.gather)                 │
+ │      INPUT per analyst: predictions, briefing, portfolio_state        │
+ │      OUTPUT per analyst: thesis{conviction, recommended_params,       │
+ │                                 risk_flags, reasoning}                │
+ │      checkpoint.update(ANALYSTS_DONE)                                 │
+ └───────────────────────────────────────┬───────────────────────────────┘
+                                         ▼
+ ┌───────────────────────────────────────────────────────────────────────┐
+ │  (4) PMs + CIO  →  pm/handlers.py :: resolve()                        │
+ │      3 PMs (aggressive/balanced/conservative) each weight the 5       │
+ │      analyst theses differently → propose portfolio params            │
+ │      CIO applies safety-override hierarchy → picks 1 of 3             │
+ │      OUTPUT: decision{decision_id, final_params, resolution,          │
+ │                       requires_approval}                              │
+ │      checkpoint.update(PM_DONE)                                       │
+ └───────────────────────────────────────┬───────────────────────────────┘
+                                         ▼
+ ┌───────────────────────────────────────────────────────────────────────┐
+ │  (5) EXECUTION  →  execution/handlers.py :: execute_daily()           │
+ │      Session check → place orders OR queue  ── see stage E            │
+ │      checkpoint.mark_complete()                                       │
+ └───────────────────────────────────────────────────────────────────────┘
+```
+
+### Stage C — LightGBM inference (the model layer)
+
+```
+skills/signals/bridge.py :: generate_predictions("lightgbm")
+
+ (1) get_signal_generator("lightgbm")
+       │
+       ├─► _patch_data_loader_for_alpaca()                [monkey-patches]
+       │     data_loader.fetch_price_data = alpaca_fetch  (skills/market_data/adapter.py)
+       │     data_loader.fetch_cross_asset_data = alpaca_cross
+       │     sentiment_features.fetch_news_sentiment = enhanced (LLM-augmented)
+       │     data_loader.fetch_fundamental_data = FMP_bulk (if FMP_API_KEY)
+       │     data_loader.fetch_earnings_dates = FMP_earnings
+       │
+       ├─► _load_pickle_compat(models/latest_lightgbm_model.pkl)
+       │     returns: {models: [lgb_model_1, lgb_model_2, lgb_model_3],  ← ensemble
+       │              feature_names: ["fund_value_composite", ...],      ← 70 features
+       │              feature_importance: pd.Series,
+       │              config: Config}
+       │
+       └─► gen.initialize_risk()  (FactorRiskModel with regime detector)
+
+ (2) gen.generate_signals()   →  CS/signal_generator.py :: generate_signals()
+
+     ┌──────────────────────────────────────────────────────────────┐
+     │ a. UNIVERSE                                                   │
+     │    tickers = get_universe(cfg)  ← sp500_pit (PIT-correct)    │
+     │    list(dict.fromkeys(tickers))  ← dedupe (fix from 46ec2b6) │
+     │    → 491 unique tickers                                       │
+     ├──────────────────────────────────────────────────────────────┤
+     │ b. PRICES                                                     │
+     │    fetch_price_data(tickers)  ← patched Alpaca adapter        │
+     │    → prices: DataFrame[date × ticker], 8 years of daily bars │
+     │    filter_universe_by_liquidity  → ~210 liquid tickers        │
+     ├──────────────────────────────────────────────────────────────┤
+     │ c. SECTORS                                                    │
+     │    load_sector_map(tickers)  ← Wikipedia + cache              │
+     │    → {AAPL: "Information Technology", ...}                    │
+     ├──────────────────────────────────────────────────────────────┤
+     │ d. FUNDAMENTALS (Point-in-time via FMP)                       │
+     │    fetch_bulk_fundamentals(tickers, FMP_KEY)                  │
+     │    → {ticker: [{filingDate, PE, PB, ROE, ...}, ...]}          │
+     │    fetch_earnings_dates → next earnings per ticker            │
+     ├──────────────────────────────────────────────────────────────┤
+     │ e. FEATURES (build_fundamental_features + pv + cross-asset)   │
+     │    70 selected features per ticker per date                   │
+     │    Examples: fund_cs_rank_earnings_yield, pv_cs_mom_126d,     │
+     │              quality_shareholder_yield, pv_cs_vol_5d          │
+     │    → X_latest: DataFrame[ticker × 70 features]                │
+     ├──────────────────────────────────────────────────────────────┤
+     │ f. DATA QUALITY GATE                                          │
+     │    if any feature >50% NaN → warn                             │
+     │    if overall >30% NaN → RuntimeError (refuse to predict)     │
+     ├──────────────────────────────────────────────────────────────┤
+     │ g. PREDICT  →  model.py :: EnsembleRanker.predict(X_latest)   │
+     │    preds = mean over 3 LightGBM ensemble models               │
+     │    → pd.Series[ticker -> score], ~210 entries                 │
+     ├──────────────────────────────────────────────────────────────┤
+     │ h. RISK MODEL                                                 │
+     │    FactorRiskModel.estimate(prices, fundamentals)             │
+     │    update_regime(prices) → HMM bull/side/bear probs           │
+     ├──────────────────────────────────────────────────────────────┤
+     │ i. PORTFOLIO CONSTRUCTION                                     │
+     │    PortfolioConstructor.construct_portfolio(                  │
+     │      predictions, date, prev_weights, vol_estimates           │
+     │    )                                                          │
+     │    - rank preds cross-sectionally                             │
+     │    - filter short universe (CD excluded — Run 17)             │
+     │      mcap>$5B, EY>0, vol<0.30, sector not in blacklist        │
+     │    - hysteresis against prev_weights (no thrash)              │
+     │    - DD circuit breaker (-3% threshold → 0.50 floor)          │
+     │    - sector cap, vol scaling, dust filter                     │
+     │    → target_weights: pd.Series[ticker -> weight]              │
+     └──────────────────────────────────────────────────────────────┘
+
+ (3) target_weights.to_dict() → returns to bridge.py → returns to pipeline.py
+     predictions dict[ticker -> weight ∈ [-0.03, +0.03]]
+     20 entries (10 long, 10 short after max_positions_long/short filter
+                 overridden by pm_params from the agent layer)
+```
+
+### Stage D — Agent debate (Intel → 5 Analysts → 3 PMs → CIO)
+
+```
+                    ┌─────────────────────────────────────┐
+                    │   predictions (from stage C)        │
+                    │   + briefing (from stage B)         │
+                    └──────┬──────────────────────────────┘
+                           │
+               ┌───────────┼───────────┬───────────┬───────────┐
+               │           │           │           │           │
+          asyncio.gather — 5 analyst personalities in parallel
+               │           │           │           │           │
+               ▼           ▼           ▼           ▼           ▼
+         ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌──────────┐ ┌─────────┐
+         │Momentum │ │  Value  │ │  Macro  │ │Sentiment │ │  Risk   │
+         │w=0.35   │ │w=0.20   │ │w=0.30   │ │w=0.40    │ │w=0.30   │
+         │dispersn │ │credit   │ │VIX      │ │sentiment │ │drawdown │
+         │+0.30    │ │+0.20    │ │+0.25    │ │+0.20     │ │+0.30    │
+         │breadth  │ │dd       │ │credit   │ │breadth   │ │VIX      │
+         └────┬────┘ └────┬────┘ └────┬────┘ └─────┬────┘ └────┬────┘
+              │           │           │            │           │
+        analyst/scoring.py :: personality_conviction(6 base signals × weights)
+              │           │           │            │           │
+              ▼           ▼           ▼            ▼           ▼
+    thesis{conviction ∈ [0,1], recommended_params{n_long, n_short, lev},
+           risk_flags, reasoning}
+              │           │           │            │           │
+              └───────────┴───────────┼────────────┴───────────┘
+                                      │
+                           5 theses flow into:
+                                      │
+                                      ▼
+      pm/handlers.py :: resolve()  →  3 PMs each compute proposal
+                                      │
+          ┌───────────────────┬───────┴──────┬────────────────┐
+          ▼                   ▼              ▼                │
+     ┌─────────┐         ┌─────────┐   ┌──────────────┐       │
+     │Aggrssv  │         │Balanced │   │Conservative  │       │
+     │mom 0.30 │         │eq 0.20  │   │risk 0.35     │       │
+     │sent 0.30│         │(each)   │   │macro 0.25    │       │
+     │×1.2 bias│         │×1.0     │   │×0.8 bias     │       │
+     └────┬────┘         └────┬────┘   └──────┬───────┘       │
+          │                   │               │               │
+     pm_proposal:         pm_proposal:    pm_proposal:        │
+     {n_long, n_short,    {...}           {...}               │
+      leverage, vol_tgt,                                      │
+      turnover_cap}                                           │
+          │                   │               │               │
+          └───────────────────┼───────────────┘               │
+                              ▼                               │
+                   pm/resolution.py :: CIO selects            │
+                   hierarchy:                                 │
+                   1. Safety: VIX>35 or DD>10% → FORCE cons   │
+                   2. HMM: if conf>60% → regime-matched PM    │
+                   3. VIX/breadth heuristic                   │
+                   4. Default balanced                        │
+                              │                               │
+                              ▼                               │
+            decision {decision_id: "PMD-0000XX",              │
+                      final_params: {...},                    │
+                      resolution: {selected_pm, rationale}}   │
+                              │                               │
+                              └───────────────────────────────┘
+                                          │
+                                          ▼
+                            passed to execute_daily()  — stage E
+```
+
+### Stage E — Execution path (queue OR place orders)
+
+```
+skills/execution/handlers.py :: execute_daily(decision, predictions)
+
+            ┌─────────────────────────────────────────────┐
+            │  session = get_session()   (session.py)     │
+            └────────────────┬────────────────────────────┘
+                             │
+           ┌─────────────────┴─────────────────┐
+           │ CLOSED or AFTER_HOURS             │ OPEN / CLOSING / PRE_MARKET
+           ▼                                   ▼
+ ┌──────────────────────┐          ┌───────────────────────────────┐
+ │ _save_pending_       │          │ build target portfolio:       │
+ │ execution()          │          │   equity = account_equity     │
+ │                      │          │   target_gross = eq × lev     │
+ │ writes:              │          │   top N / bottom M from preds │
+ │  workspaces/         │          │   equal-weight within leg     │
+ │  execution-agent/    │          │                               │
+ │  pending_execution.  │          │ diff vs current_positions     │
+ │  json                │          │ dust filter (<$500 or <1% eq) │
+ │                      │          │ turnover cap (scale if over)  │
+ │ payload:             │          │                               │
+ │  {saved_at,          │          │ for each trade:               │
+ │   decision,          │          │   VWAP-split if large         │
+ │   predictions}       │          │   _place_order(Alpaca):       │
+ │                      │          │     POST /v2/orders           │
+ │ return {status:      │          │     type=market, TIF=day      │
+ │  queued_for_open}    │          │                               │
+ │                      │          │ update state.json:            │
+ │                      │          │   daily_turnover_used         │
+ │                      │          │   overnight_positions         │
+ │                      │          │   pdt_day_trade_count         │
+ │                      │          │                               │
+ │                      │          │ audit_log('daily_executed')   │
+ │                      │          │ return ExecutionReport        │
+ └──────────┬───────────┘          └──────────────┬────────────────┘
+            │                                     │
+   ──────── sits on disk ─────                    │
+   until next 09:32 ET                            │
+            │                                     │
+ ┌──────────▼──────────────────────────────┐      │
+ │ 09:32 ET: scheduler fires               │      │
+ │ execute_pending_at_open():              │      │
+ │   _load_pending_execution()             │      │
+ │   if age > 72h: discard + clear         │      │
+ │   else if market not open yet: bail     │      │
+ │   else:                                 │      │
+ │     execute_daily(decision, predictions)│──────┘
+ │     clear pending file on success       │
+ └─────────────────────────────────────────┘
+```
+
+### Data shapes at each boundary
+
+| Hop | Shape | Example |
+|---|---|---|
+| Bridge → Pipeline | `dict[ticker → weight]` | `{"AAPL": 0.008, "CRM": -0.006, ...}` (20 entries) |
+| Pipeline → Analysts | `predictions: dict`, `briefing: dict`, `portfolio_state: dict` | briefing={vix: 28.6, breadth: 0.62, hmm_bull: 0.35, ...} |
+| Analyst → PM | 5× `thesis` | `{"momentum": {conviction: 0.68, recommended_params: {...}}, ...}` |
+| PM → CIO → Exec | `decision` | `{decision_id: "PMD-000003", final_params: {n_long: 6, n_short: 4, max_gross_leverage: 0.77, ...}}` |
+| Exec → Alpaca | `order` | `{symbol: "META", notional: 85000.0, side: "buy", type: "market", TIF: "day"}` |
+| Exec → disk (closed market) | `pending_execution.json` | `{saved_at: ISO, decision: {...}, predictions: {...}}` |
+
+### State files that persist across scheduler restarts
+
+```
+openclaw-fintech/
+├── workspaces/
+│   ├── execution-agent/
+│   │   ├── state.json              ← account equity, positions, PDT
+│   │   └── pending_execution.json  ← the queue (closed-market decisions)
+│   └── orchestrator/checkpoints/
+│       └── daily-YYYYMMDD-HHMMSS.json  ← every pipeline run's step-by-step state
+├── data/
+│   ├── fintech.db                  ← SQLite: P&L, approvals, encrypted trade meta
+│   └── cached_predictions.json     ← last daily predictions (for intraday reuse)
+└── logs/
+    ├── audit.jsonl                 ← every agent decision, every order
+    └── app_YYYY-MM-DD.log
+```
+
 ## ML Models
 
 The ML layer is provided by the [CS Multi-Model Trading System](https://github.com/Kymi808/CS_Multi_Model_Trading_System), a separate repository that handles feature engineering, model training, and signal generation. OpenClaw consumes its predictions through `skills/signals/bridge.py`.
