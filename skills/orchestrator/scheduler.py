@@ -19,7 +19,7 @@ import sys
 from datetime import datetime, time
 from zoneinfo import ZoneInfo
 
-from skills.shared import get_logger
+from skills.shared import get_logger  # .env is loaded in skills/orchestrator/__init__.py
 
 logger = get_logger("orchestrator.scheduler")
 
@@ -226,9 +226,7 @@ def main():
         format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
     )
 
-    from dotenv import load_dotenv
-    load_dotenv("gateway/.env")
-
+    # .env already loaded at module import time — see top of file
     logger.info("Starting OpenClaw trading scheduler")
     logger.info(f"Schedule: {SCHEDULE}")
 
