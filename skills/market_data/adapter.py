@@ -103,6 +103,9 @@ def fetch_price_data(
         ])
         df.set_index("Date", inplace=True)
         df.index = pd.to_datetime(df.index, utc=True).tz_localize(None)
+        # Alpaca sometimes returns corrected/duplicate bars on the same date —
+        # keep the last occurrence to avoid reindex failures downstream.
+        df = df[~df.index.duplicated(keep="last")]
         prices_frames[symbol] = df["Close"]
         volumes_frames[symbol] = df["Volume"]
 
@@ -185,6 +188,7 @@ def fetch_cross_asset_data(
             ])
             df.set_index("Date", inplace=True)
             df.index = pd.to_datetime(df.index, utc=True).tz_localize(None)
+            df = df[~df.index.duplicated(keep="last")]
             frames[original_ticker] = df["Close"]
 
     if frames:
