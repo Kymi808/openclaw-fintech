@@ -71,21 +71,33 @@ Signal weights are adapted over time via an exponential decay feedback loop (dec
 
 The ML layer is provided by the [CS Multi-Model Trading System](https://github.com/Kymi808/CS_Multi_Model_Trading_System), a separate repository that handles feature engineering, model training, and signal generation. OpenClaw consumes its predictions through `skills/signals/bridge.py`.
 
-**Model Priority**: CrossMamba → TST → LightGBM (falls back to LightGBM on macOS ARM due to PyTorch selective scan segfault).
+**Model Priority**: LightGBM (primary) → CrossMamba → TST. LightGBM is the currently deployed production model (CS commit `46ec2b6` — Run 17). CrossMamba/TST remain available as fallbacks on Linux. Override with the `PRIMARY_MODEL` env var.
 
-**Current Performance** (real data, 460 stocks, 10L/10S neutral, walk-forward validation, 24bp round-trip costs):
+The primary model was switched from CrossMamba to LightGBM after an empirical audit (see CS repo `audit_v3`) found that the previously reported high-Sharpe results were driven by (1) fundamental look-ahead bias in yfinance, (2) a favorable backtest window, and (3) an aggressive 10L/10S configuration that would not survive realistic TC assumptions. The honest, audited numbers are substantially lower but reflect behavior you can actually deploy.
 
-| Model | Annual Return | Sharpe | Max Drawdown | Win Rate |
-|-------|-------------|--------|-------------|----------|
-| **CrossMamba** | 35.38% | 3.393 | -13.66% | 59.25% |
-| **TST** | 37.02% | 3.382 | -9.25% | 57.79% |
-| Ensemble | 19.53% | 1.878 | -9.84% | 55.13% |
-| LightGBM | 13.38% | 1.238 | -10.22% | 55.26% |
-| SPY benchmark | 20.67% | 1.378 | -18.76% | 57.14% |
+**Current production performance** — LightGBM Run 17, 100L/30S, 10-day horizon, 5-year walk-forward OOS (2021-03 to 2026-03), 14bp round-trip TC, PIT fundamentals via FMP (no look-ahead), Consumer Discretionary excluded from short universe:
 
-LightGBM Avg Rank IC: 0.063 ± 0.141 (IR: 0.44). Returns are near-neutral (~10% net exposure) — driven by stock selection alpha, not market beta. Caveats: fundamental look-ahead bias (yfinance), single bullish test period (2021-2026). Expect 30-40% degradation live.
+| Metric | Value |
+|---|---|
+| Sharpe Ratio | **0.627** |
+| Max Drawdown | **-9.55%** |
+| Total Return (5y) | +19.83% |
+| Annual Return | +3.70% |
+| Annual Volatility | 5.90% |
+| Avg Rank IC | 0.020 |
+| IC Info Ratio | 0.234 |
+| Avg Net Exposure | 16.5% |
+| Avg Gross Exposure | 57.6% |
+| Win Rate (daily) | 53.1% |
+| 2022 Return | -6.49% |
+| 2024 Return | +3.12% |
+| 2025 Return | +13.66% |
 
-Models retrain automatically every 14 days via GitHub Actions on Linux (CrossMamba requires CUDA-compatible environment).
+SPY benchmark over same window: ann 12.33%, Sharpe 0.725, MDD -24.50%. **The strategy underperforms long SPY in absolute return but with half the drawdown and a different return stream — its value is as a low-correlation alpha sleeve, not a market replacement.** Live paper-trading degradation of 20-40% is expected.
+
+Historical per-model numbers in older commits (CrossMamba Sharpe 3.4, etc.) came from a 10L/10S concentrated neutral config with yfinance fundamentals and a different TC model — they are **not reproducible under the current methodology** and should be treated as superseded.
+
+Models retrain automatically every 14 days via GitHub Actions on Linux (CrossMamba requires CUDA). LightGBM retrains locally via `retrain.py` in the CS repo.
 
 ## Risk Management
 
@@ -141,6 +153,7 @@ The autonomous scheduler (`skills/orchestrator/scheduler.py`) runs a full tradin
 ```
  6:30 AM ET  Check for retrained models (git pull from GitHub Actions)
  7:00 AM     Pre-market briefing (regime, news, macro)
+ 9:32 AM     Execute any decision queued while market was closed (replay)
 10:00 AM     Daily cycle: ML predictions → 5 analysts → 3 PMs → CIO → execute
 10:15 AM     Intraday scans begin (every 15 minutes)
  3:00 PM     Power hour: scans every 5 minutes
@@ -152,11 +165,82 @@ The autonomous scheduler (`skills/orchestrator/scheduler.py`) runs a full tradin
  5:00 PM     Intraday model update: collect data, retrain
 ```
 
+**Run as:**
+
+```bash
+PYTHONPATH=. python -m skills.orchestrator.scheduler
+```
+
+### Queueing decisions made while the market is closed
+
+`execute_daily` saves the current decision + predictions to `workspaces/execution-agent/pending_execution.json` whenever it's called outside `PRE_MARKET`, `OPEN`, or `CLOSING` sessions. The 09:32 ET `execute_pending_at_open` task reads this file, verifies the decision is less than 72 hours old, and replays it against the live market. This lets you trigger a full pipeline run on weekends / overnight / holidays and have it execute at the next open automatically.
+
+Only one pending decision can exist at a time — running the pipeline twice while closed overwrites the older entry so you don't stack up stale signals.
+
+### Operations — inspecting state
+
+All read-only; safe to run any time:
+
+```bash
+# What's queued right now?
+cat workspaces/execution-agent/pending_execution.json | python -m json.tool | head -30
+
+# One-line status with age
+python -c "
+import json, os
+from datetime import datetime, timezone
+p = 'workspaces/execution-agent/pending_execution.json'
+if not os.path.exists(p):
+    print('(no pending decision)')
+else:
+    d = json.load(open(p))
+    saved = datetime.fromisoformat(d['saved_at'])
+    age_h = (datetime.now(timezone.utc) - saved).total_seconds() / 3600
+    print(f\"decision_id={d['decision']['decision_id']}  n_preds={len(d['predictions'])}  age={age_h:.1f}h\")
+"
+
+# All past pipeline runs (every daily/intraday cycle)
+ls -lt workspaces/orchestrator/checkpoints/
+
+# Latest run's full detail
+ls -t workspaces/orchestrator/checkpoints/ | head -1 | \
+  xargs -I{} python -m json.tool workspaces/orchestrator/checkpoints/{}
+
+# Current execution-agent state (account equity, open positions, PDT count)
+cat workspaces/execution-agent/state.json 2>/dev/null | python -m json.tool
+
+# Tail the live audit log (every agent decision + order)
+tail -f logs/audit.jsonl
+
+# Recent daily-cycle completions
+grep daily_cycle_complete logs/audit.jsonl | tail -5
+```
+
+### Manually triggering pipelines (useful for testing & weekend decisions)
+
+```bash
+# Run one daily cycle right now (queues if market is closed)
+PYTHONPATH=. python -c "
+import asyncio
+from skills.orchestrator.pipeline import run_daily_cycle
+print(asyncio.run(run_daily_cycle()))
+"
+
+# Force a pending-queue replay (no-op if nothing queued, or if market is closed)
+PYTHONPATH=. python -c "
+import asyncio
+from skills.execution.handlers import execute_pending_at_open
+print(asyncio.run(execute_pending_at_open()))
+"
+```
+
 ### Persistence
-- **P&L tracking**: SQLite database with daily snapshots, equity curve, Sharpe, drawdown
+- **P&L tracking**: SQLite database with daily snapshots, equity curve, Sharpe, drawdown (`data/fintech.db`)
 - **Approvals**: SQLite-backed with auto-expiry (survives process restarts)
-- **Agent state**: JSON files with atomic writes (safe_save_state prevents corruption)
-- **Checkpoints**: Pipeline step tracking for crash recovery (detects dangerous incomplete executions)
+- **Agent state**: JSON files with atomic writes (`safe_save_state` prevents corruption) under `workspaces/`
+- **Checkpoints**: Pipeline step tracking for crash recovery at `workspaces/orchestrator/checkpoints/` (detects incomplete executions on next start)
+- **Pending queue**: `workspaces/execution-agent/pending_execution.json` — decisions made while market was closed
+- **Encrypted fields**: trade metadata, payment references, and P&L summaries in `fintech.db` are Fernet-encrypted at rest (requires `DATA_ENCRYPTION_KEY` to decrypt across restarts — see Setup)
 
 ### Alerting
 Slack/Discord webhook alerts for: pipeline failures, order rejections, reconciliation discrepancies, drawdown warnings, daily P&L summary. Configure `ALERT_WEBHOOK_URL` in `gateway/.env`.
@@ -169,15 +253,30 @@ cd openclaw-fintech
 python cli.py
 ```
 
-API keys in `gateway/.env`:
+API keys and settings in `gateway/.env`:
+
 ```
 ALPACA_API_KEY=...
 ALPACA_API_SECRET=...
+ALPACA_BASE_URL=https://paper-api.alpaca.markets   # paper trading endpoint
 ANTHROPIC_API_KEY=...        # LLM sentiment + research reports
 FMP_API_KEY=...              # point-in-time fundamentals ($29/mo)
 FRED_API_KEY=...             # economic data (free)
 ALERT_WEBHOOK_URL=...        # Slack/Discord alerts
+DATA_ENCRYPTION_KEY=...      # Fernet key for at-rest encryption (see below)
+
+# Optional:
+PRIMARY_MODEL=lightgbm       # overrides model priority (default: lightgbm)
+CS_SYSTEM_PATH=/abs/path     # CS repo location (default: /Users/kylezeng/CS_Multi_Model_Trading_System)
 ```
+
+**Generating a `DATA_ENCRYPTION_KEY`** (run once, then paste into `.env`):
+
+```bash
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+Without this key, the encryption manager falls back to a process-local ephemeral key on every start, meaning data written today cannot be decrypted tomorrow. The key must be stable across restarts. `.env` is loaded automatically at `skills.orchestrator` package import time so it's visible before any database initialization.
 
 Docker deployment (enables CrossMamba on Linux):
 ```bash
@@ -194,15 +293,21 @@ Coverage: analyst scoring, personality conviction, preset interpolation, PM reso
 
 ## Known Limitations and Honest Assessment
 
-1. **No live track record.** The system has zero days of live P&L. Backtest results, no matter how rigorous the methodology, are not predictive of future performance. Paper trading validation (6+ months) is required before any real capital allocation.
+1. **No live track record.** The system has zero days of live P&L. Backtest results — even the honest Run 17 numbers above — are not predictive of live performance. Paper trading validation (6+ months) is required before any real capital allocation.
 
-2. **Fundamental look-ahead bias.** yfinance returns current fundamentals for all historical dates. The FMP integration is built but not yet active. Every backtest result using fundamental features is inflated by an estimated 2-5%.
+2. **Fundamental look-ahead bias — now mitigated.** FMP is the primary fundamentals source (point-in-time by `filingDate`). yfinance remains as a fallback only. Prior backtest results with yfinance-only fundamentals were inflated by an estimated 2-5% and are superseded.
 
-3. **Single market regime in backtest.** The 2021-2026 period is predominantly bullish. The HMM regime detector has never been tested on a genuine bear market transition. The 2022 correction is the only stress period in the data.
+3. **Single market regime in backtest.** The 2021-2026 period is predominantly bullish. The HMM regime detector has never been tested on a genuine bear market transition. Jan 2022 (-5.1% month) is the only real stress period in the sample and contributed most of the 2022 annual loss (-6.49%).
 
-4. **CrossMamba macOS incompatibility.** PyTorch's selective scan operation segfaults on Apple Silicon. The system falls back to LightGBM locally, which is functional but not the primary model.
+4. **Model decay 2022-2023.** IC by year: 2022 -0.006, 2023 -0.003, 2024 +0.033, 2025 +0.045. The cross-sectional signal is strongly regime-dependent and produces essentially zero edge at VIX > 25. This is a feature-quality limitation, not a parameter-tuning one — future improvement requires new features, not portfolio tweaks.
 
-5. **Approximate transaction costs.** The volatility-scaled slippage model is better than fixed costs but has not been calibrated against actual execution data. Real costs may be 30-50% higher than estimated.
+5. **CrossMamba macOS incompatibility.** PyTorch's selective scan operation segfaults on Apple Silicon. On Mac the scheduler uses LightGBM only. On Linux production boxes CrossMamba/TST are available as fallbacks but LightGBM (Run 17) is the current primary because the honest audit supports it.
+
+6. **Short leg is a hedge, not alpha.** Standalone short Sharpe over the 5-year sample is -0.22. It contributes +5 to +14% cumulative in the worst 5-10% of long-PnL days, which is why the 0.45L / 0.25S split is kept — removing shorts breaches the <10% MDD target even though it raises absolute return.
+
+7. **Approximate transaction costs.** Using 14 bp round-trip (7 bp/side). Volatility-scaled slippage model has not been calibrated against actual Alpaca fills. Real costs may be 30-50% higher; paper trading will calibrate this.
+
+8. **Consumer Discretionary short exclusion.** Empirically justified (Run 15b diagnostics: CD shorts mean PnL -1.01%, t=-3.20, losing 4/6 years) but is a hardcoded sector blacklist. If the regime shifts (e.g., luxury retailers blow up), the filter may become inappropriate. Revisit in feedback loop.
 
 ## References
 
