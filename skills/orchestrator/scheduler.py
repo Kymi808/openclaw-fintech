@@ -32,6 +32,9 @@ SCHEDULE = {
     "check_model_updates": time(6, 30),
     # Pre-market: scan overnight news, gaps, macro events
     "pre_market_briefing": time(7, 0),
+    # Open (09:32 ET, 2 min after bell): replay any decision queued while closed.
+    # Decisions made after-hours / overnight / on weekends land here first.
+    "execute_pending_at_open": time(9, 32),
     # Opening: wait for opening range to form (9:30-10:00 is noise)
     "daily_cycle": time(10, 0),
     # Intraday: active scanning window
@@ -76,6 +79,11 @@ async def run_scheduled_task(task_name: str):
             from skills.execution.handlers import close_intraday_positions
             result = await close_intraday_positions()
             logger.info(f"EOD close: {result.get('status')}")
+
+        elif task_name == "execute_pending_at_open":
+            from skills.execution.handlers import execute_pending_at_open
+            result = await execute_pending_at_open()
+            logger.info(f"Pending replay: {result.get('status')}")
 
         elif task_name == "daily_pnl":
             from skills.pnl.reconciliation import reconcile_positions, format_reconciliation_report

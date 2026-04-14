@@ -26,6 +26,11 @@ from .models import ExecutionReport
 logger = get_logger("execution.handlers")
 
 STATE_FILE = Path("./workspaces/execution-agent/state.json")
+PENDING_FILE = Path("./workspaces/execution-agent/pending_execution.json")
+
+# Max age of a queued decision before we refuse to replay it. Protects against
+# stale signals being executed after weekend+holiday gaps.
+PENDING_MAX_AGE_HOURS = 72
 
 
 DEFAULT_STATE = {
@@ -48,6 +53,50 @@ def _load_state() -> dict:
 def _save_state(state: dict) -> None:
     from skills.shared.state import safe_save_state
     safe_save_state(STATE_FILE, state)
+
+
+def _save_pending_execution(decision: dict, predictions: dict[str, float]) -> None:
+    """Persist a decision + predictions pair to replay at next market open."""
+    from skills.shared.state import safe_save_state
+    payload = {
+        "saved_at": datetime.now(timezone.utc).isoformat(),
+        "decision": decision,
+        "predictions": predictions,
+    }
+    safe_save_state(PENDING_FILE, payload)
+    logger.info(
+        f"Queued decision {decision.get('decision_id', '?')} for next market open "
+        f"({len(predictions)} predictions)"
+    )
+
+
+def _load_pending_execution() -> dict | None:
+    """Load queued decision+predictions if present and not stale."""
+    from skills.shared.state import safe_load_state
+    payload = safe_load_state(PENDING_FILE, None)
+    if not payload or not isinstance(payload, dict):
+        return None
+    try:
+        saved_at = datetime.fromisoformat(payload.get("saved_at", ""))
+    except ValueError:
+        return None
+    age_hours = (datetime.now(timezone.utc) - saved_at).total_seconds() / 3600
+    if age_hours > PENDING_MAX_AGE_HOURS:
+        logger.warning(
+            f"Pending execution is stale ({age_hours:.1f}h > {PENDING_MAX_AGE_HOURS}h) — discarding"
+        )
+        _clear_pending_execution()
+        return None
+    return payload
+
+
+def _clear_pending_execution() -> None:
+    """Remove the pending file after successful replay."""
+    try:
+        if PENDING_FILE.exists():
+            PENDING_FILE.unlink()
+    except OSError as e:
+        logger.warning(f"Could not clear {PENDING_FILE}: {e}")
 
 
 async def _get_account_equity() -> float:
@@ -141,7 +190,18 @@ async def execute_daily(decision: dict, predictions: dict[str, float]) -> dict:
     """
     session = get_session()
     if session not in (MarketSession.OPEN, MarketSession.CLOSING, MarketSession.PRE_MARKET):
-        return {"error": f"Market is {session.value} — cannot execute daily trades"}
+        # Market is CLOSED or AFTER_HOURS: queue the decision so the scheduler's
+        # `execute_pending_at_open` task (09:32 ET) can replay it when trading opens.
+        _save_pending_execution(decision, predictions)
+        return {
+            "status": "queued_for_open",
+            "session": session.value,
+            "decision_id": decision.get("decision_id"),
+            "message": (
+                f"Market {session.value}. Decision saved to {PENDING_FILE}. "
+                f"Will execute at next market open (or within {PENDING_MAX_AGE_HOURS}h)."
+            ),
+        }
 
     state = _load_state()
     params = decision.get("final_params", {})
@@ -308,6 +368,43 @@ async def execute_intraday(decision: dict, predictions: dict[str, float]) -> dic
         "remaining_turnover": round(remaining_turnover, 2),
         "minutes_to_close": minutes_to_close(),
     }
+
+
+async def execute_pending_at_open() -> dict:
+    """
+    Replay any decision that was queued while the market was closed.
+
+    Called by the scheduler at 09:32 ET (post-open). No-op if no pending file.
+    Falls through to execute_daily which handles all the usual rebalancing logic.
+    """
+    payload = _load_pending_execution()
+    if payload is None:
+        return {"status": "no_pending"}
+
+    if not is_market_open():
+        return {
+            "status": "still_closed",
+            "message": "execute_pending_at_open ran but market is not open yet",
+        }
+
+    decision = payload.get("decision", {})
+    predictions = payload.get("predictions", {})
+    saved_at = payload.get("saved_at", "?")
+
+    logger.info(
+        f"Replaying queued decision {decision.get('decision_id', '?')} "
+        f"(saved {saved_at}, {len(predictions)} predictions)"
+    )
+
+    result = await execute_daily(decision, predictions)
+
+    # Only clear if execution actually happened (not if it re-queued for some reason)
+    if result.get("status") != "queued_for_open":
+        _clear_pending_execution()
+
+    result["replayed_from_pending"] = True
+    result["original_saved_at"] = saved_at
+    return result
 
 
 async def close_intraday_positions() -> dict:

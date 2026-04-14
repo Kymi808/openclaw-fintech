@@ -38,17 +38,28 @@ _last_intraday_run: float = 0.0
 
 
 def _load_real_predictions(pm_params: dict = None) -> dict[str, float]:
-    """Load predictions from the best available trained model."""
+    """Load predictions from the best available trained model.
+
+    Primary model: LightGBM (CS repo Run 17 checkpoint — Sharpe 0.58, MDD -9.5%,
+    Consumer Discretionary excluded from short universe). CrossMamba/TST remain
+    available as fallbacks on Linux if LightGBM load fails.
+    """
     import platform
     from skills.signals.bridge import generate_predictions, MODEL_PATHS
 
+    # PRIMARY_MODEL env var can override default (useful when switching champions).
+    import os as _os
+    primary = _os.environ.get("PRIMARY_MODEL", "lightgbm").lower()
+
     # CrossMamba/TST segfault on macOS ARM (Apple Silicon) during inference
-    # Use LightGBM on Mac, CrossMamba on Linux (production servers)
     if platform.system() == "Darwin" and platform.machine() == "arm64":
         model_priority = ("lightgbm",)
-        logger.info("macOS ARM detected — using LightGBM (CrossMamba not supported on Apple Silicon)")
+        logger.info("macOS ARM — LightGBM only (CrossMamba not supported on Apple Silicon)")
     else:
-        model_priority = ("crossmamba", "tst", "lightgbm")
+        # Put the primary model first, keep others as fallback
+        fallbacks = tuple(m for m in ("crossmamba", "tst", "lightgbm") if m != primary)
+        model_priority = (primary,) + fallbacks
+        logger.info(f"Model priority: {model_priority}")
 
     for model_name in model_priority:
         model_path = MODEL_PATHS.get(model_name)
