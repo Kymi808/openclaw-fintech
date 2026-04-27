@@ -2,7 +2,6 @@
 Shared test fixtures for the fintech agent test suite.
 """
 import os
-import tempfile
 import pytest
 
 # Set test encryption key before any imports

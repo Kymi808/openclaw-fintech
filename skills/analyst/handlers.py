@@ -5,7 +5,6 @@ Supports multiple analyst personalities, each with different signal weights,
 model preferences, and risk profiles. All personalities use the same
 deterministic scoring functions — only the weights differ.
 """
-import json
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -13,7 +12,7 @@ from skills.shared import get_logger, audit_log
 from .models import Thesis, ReasoningPoint
 from .scoring import personality_conviction
 from .presets import interpolate_params_from_profile
-from .personalities import ANALYST_PERSONALITIES, RISK_PROFILES
+from .personalities import ANALYST_PERSONALITIES
 
 # Adaptive feedback — weights evolve based on performance
 _feedback_initialized = False
@@ -172,7 +171,6 @@ def _generate_observation(
     """Generate human-readable observation for a reasoning point."""
     factor = raw["factor"]
     score = raw["score"]
-    name = personality.get("name", "Analyst")
 
     observations = {
         "model_dispersion": {

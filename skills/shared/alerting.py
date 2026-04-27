@@ -10,11 +10,9 @@ Sends alerts for:
 
 Configure via ALERT_WEBHOOK_URL in .env. Supports Slack and Discord webhook formats.
 """
-import json
 import os
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional
 
 import httpx
 
@@ -44,8 +42,6 @@ async def send_alert(
     If no webhook URL configured, logs the alert instead.
     """
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    level_emoji = {"info": "info", "warning": "warning", "critical": "rotating_light"}
-    emoji = level_emoji.get(level.value, "bell")
 
     # Build Slack-compatible payload
     blocks = [

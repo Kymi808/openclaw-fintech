@@ -11,10 +11,9 @@ Tracks:
 
 Persists to SQLite for crash recovery and historical analysis.
 """
-import json
 import sqlite3
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone, date
 from pathlib import Path
 from typing import Optional

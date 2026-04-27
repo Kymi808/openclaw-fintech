@@ -1,8 +1,8 @@
 """Tests for the SQLite database layer."""
 import pytest
-import json
 import threading
-from pathlib import Path
+from datetime import date, timedelta
+
 from skills.shared.database import Database
 
 
@@ -137,13 +137,14 @@ class TestExpenses:
 
 class TestContracts:
     def test_insert_and_expiry(self, fresh_db):
+        expiration_date = date.today() + timedelta(days=10)
         fresh_db.insert_contract({
             "contract_id": "CTR-001",
             "filename": "service-agreement.pdf",
             "parties": ["Company A", "Company B"],
             "contract_type": "Service Agreement",
             "effective_date": "2025-01-01",
-            "expiration_date": "2026-04-01",
+            "expiration_date": expiration_date.isoformat(),
             "summary": "Confidential contract summary text",
             "risk_flags": ["auto-renewal", "no liability cap"],
         })

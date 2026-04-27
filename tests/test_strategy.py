@@ -1,5 +1,4 @@
 """Tests for trading strategy logic."""
-import pytest
 from skills.trading.strategy import (
     check_risk_limits,
     needs_approval,

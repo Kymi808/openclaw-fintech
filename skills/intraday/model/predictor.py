@@ -11,8 +11,6 @@ Based on López de Prado's methodology:
 Architecture: LightGBM (gradient boosting) — same as institutional standard.
 The edge comes from features + labeling + training methodology, not model complexity.
 """
-import json
-import os
 import pickle
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -23,7 +21,7 @@ import pandas as pd
 
 from skills.shared import get_logger
 from skills.shared.state import safe_load_state, safe_save_state
-from .features import build_intraday_features, build_features_batch
+from .features import build_intraday_features
 
 logger = get_logger("intraday.model.predictor")
 
@@ -244,7 +242,7 @@ class IntradayPredictor:
         # Build DataFrame
         df = pd.DataFrame(samples)
         target = df.pop("_target")
-        symbols = df.pop("_symbol")
+        df.pop("_symbol")
         time_idx = df.pop("_time_index")
 
         X = df.select_dtypes(include=[np.number]).fillna(0)
@@ -253,13 +251,6 @@ class IntradayPredictor:
 
         try:
             import lightgbm as lgb
-
-            # ── Triple Barrier Relabeling ────────────────────────────
-            # Convert fixed returns to triple barrier labels
-            from .labeling import compute_sample_weights
-            tb_labels = np.sign(y)  # +1 if positive return, -1 if negative
-            # When we have enough data, use actual triple barrier from labeling.py
-            # For now, use sign of return as label approximation
 
             # ── Sample Weights (uniqueness) ──────────────────────────
             # Approximate: samples from same stock at adjacent times overlap

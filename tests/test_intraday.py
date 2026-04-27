@@ -1,7 +1,6 @@
 """
 Tests for intraday signal module.
 """
-import pytest
 from datetime import datetime
 from skills.intraday.signals import (
     VWAPReversion, OpeningRangeBreakout, MomentumBurst, GapAnalysis,

@@ -2,7 +2,8 @@
 name = "openclaw-fintech"
 version = "1.0.0"
 description = "OpenClaw multi-agent fintech bot team"
-requires-python = ">=3.11"
+readme = "README.md"
+requires-python = ">=3.11,<3.14"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -15,3 +16,14 @@ addopts = "-v --tb=short"
 [tool.ruff]
 target-version = "py311"
 line-length = 100
+extend-exclude = [
+    ".openclaw",
+    "data",
+    "logs",
+    "memory",
+    "survey.html",
+    "workspaces",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"**/__init__.py" = ["F401"]

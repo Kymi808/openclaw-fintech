@@ -2,7 +2,6 @@
 Trading strategies: signal generation, arbitrage detection, and risk checks.
 """
 from dataclasses import dataclass
-from typing import Optional
 
 from skills.shared import get_logger, DEFAULT_LIMITS, ALLOWED_PAIRS
 from .exchange_client import Ticker

@@ -12,7 +12,7 @@ Features designed for predicting 1-hour forward returns:
 """
 import numpy as np
 import pandas as pd
-from typing import Optional
+from pathlib import Path
 
 from skills.shared import get_logger
 
@@ -74,7 +74,6 @@ def build_intraday_features(
         features["vwap_slope_30m"] = 0
 
     # ── Volume Features ──────────────────────────────────────────────
-    avg_vol_20 = np.mean(volumes[-20:]) if n >= 20 else np.mean(volumes)
     avg_vol_all = np.mean(volumes)
 
     features["relative_volume_5m"] = (
@@ -199,21 +198,6 @@ def build_intraday_features(
         features.update(micro)
     except Exception:
         pass  # microstructure features are additive, not required
-
-    # ── LLM Sentiment Features (if available) ────────────────────
-    # These are pre-computed by the Intel agent and cached
-    # The intraday model picks them up as static features per symbol
-    try:
-        from skills.news.llm_sentiment import compute_llm_sentiment_features
-        from skills.shared.state import safe_load_state
-        cache = safe_load_state(Path("./data/sentiment_cache.json"), {"articles": {}})
-        analyses = list(cache.get("articles", {}).values())
-        if analyses:
-            # Extract symbol from the bars context (caller provides this)
-            # For now, these features are added at the batch level in build_features_batch
-            pass
-    except Exception:
-        pass
 
     return features
 

@@ -10,7 +10,7 @@ Resolution hierarchy:
 3. Safety overrides can force conservative positioning regardless
 """
 from skills.shared import get_logger
-from skills.analyst.presets import PARAM_FLOOR, INTERPOLATABLE
+from skills.analyst.presets import INTERPOLATABLE
 from skills.analyst.personalities import PM_PERSONALITIES
 
 logger = get_logger("pm.resolution")

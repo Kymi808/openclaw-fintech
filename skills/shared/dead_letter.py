@@ -8,10 +8,9 @@ import time
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
-from pathlib import Path
 
 from .config import get_logger, audit_log
-from .database import Database, DB_PATH
+from .database import Database
 
 logger = get_logger("dead_letter")
 

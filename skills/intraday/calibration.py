@@ -8,7 +8,6 @@ Addresses:
    and limit exposure per cluster.
 """
 import numpy as np
-from typing import Optional
 
 from skills.shared import get_logger
 

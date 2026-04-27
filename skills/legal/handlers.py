@@ -5,8 +5,7 @@ Uses Anthropic Claude API for document analysis.
 import json
 import os
 from pathlib import Path
-from datetime import datetime, timezone, timedelta
-from typing import Optional
+from datetime import datetime, timezone
 import httpx
 
 from skills.shared import get_logger, audit_log
@@ -344,10 +343,10 @@ async def gdpr_scan(url: str) -> dict:
     lines = [
         f"🔍 GDPR Compliance Scan — {url}",
         f"Scan date: {now}",
-        f"",
+        "",
         f"Issues Found: {len(issues)}",
-        f"| Severity | Issue | Location |",
-        f"|----------|-------|----------|",
+        "| Severity | Issue | Location |",
+        "|----------|-------|----------|",
     ]
     for issue in issues:
         lines.append(
@@ -355,7 +354,7 @@ async def gdpr_scan(url: str) -> dict:
         )
 
     if issues:
-        lines.append(f"\nRemediation steps:")
+        lines.append("\nRemediation steps:")
         for i, issue in enumerate(issues, 1):
             lines.append(f"{i}. [{issue['severity']}] {issue['remediation']}")
 
@@ -537,7 +536,7 @@ async def legal_research(topic: str, jurisdiction: str = "US Federal") -> dict:
     msg_parts = [
         f"📚 Legal Research: {topic}",
         f"Jurisdiction: {jurisdiction}",
-        f"",
+        "",
         analysis,
     ]
 

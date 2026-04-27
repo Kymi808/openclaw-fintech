@@ -20,9 +20,8 @@ Report sections:
 - Sector Rotation Analysis
 - Forward Outlook & Key Events
 """
-import json
 import os
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 
 import httpx
 
@@ -87,7 +86,7 @@ async def _gather_report_data() -> dict:
         from skills.execution.handlers import _get_current_positions, _get_account_equity
         data["equity"] = await _get_account_equity()
         data["positions"] = await _get_current_positions()
-    except Exception as e:
+    except Exception:
         data["positions"] = {}
         data["equity"] = 0
 

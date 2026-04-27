@@ -1,6 +1,4 @@
 """Tests for the approval workflow engine."""
-import pytest
-from skills.shared.approval import ApprovalEngine, ApprovalStatus
 
 
 class TestApprovalEngine:

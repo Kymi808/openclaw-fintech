@@ -23,7 +23,6 @@ References:
 import numpy as np
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Optional
 
 from skills.shared import get_logger
 
@@ -240,7 +239,7 @@ def check_momentum_ignition(
     if directional > 2.0 and vol_ratio > 2.0:
         return SafeguardResult(
             True, "momentum_ignition",
-            f"Elevated directional move with volume — caution",
+            "Elevated directional move with volume — caution",
             severity="warning",
         )
 

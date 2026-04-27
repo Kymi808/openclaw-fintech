@@ -4,7 +4,6 @@ Intraday agent handlers.
 Provides scanning for intraday setups and manages active signals.
 Integrates with the execution agent for trade placement.
 """
-import json
 from datetime import datetime, timezone
 from pathlib import Path
 

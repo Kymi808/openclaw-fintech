@@ -6,7 +6,6 @@ import time
 import threading
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Optional
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 from .config import get_logger
@@ -163,7 +162,7 @@ class MetricsRegistry:
             lines.append(f"# HELP {h.name} {h.help}")
             lines.append(f"# TYPE {h.name} histogram")
             for bucket, count in h.bucket_counts().items():
-                le = f"+Inf" if bucket == float("inf") else f"{bucket}"
+                le = "+Inf" if bucket == float("inf") else f"{bucket}"
                 lines.append(f'{h.name}_bucket{{le="{le}"}} {count}')
             lines.append(f"{h.name}_sum {h.sum}")
             lines.append(f"{h.name}_count {h.count}")
@@ -238,7 +237,7 @@ def timed(histogram_name: str, counter_name: str = None):
                 if counter_name:
                     metrics.counter(counter_name).inc(label="success")
                 return result
-            except Exception as e:
+            except Exception:
                 elapsed = time.time() - start
                 metrics.histogram(histogram_name).observe(elapsed)
                 if counter_name:

@@ -10,17 +10,16 @@ Handles both daily rebalancing and intraday trading with:
 - VWAP order splitting for large positions
 - Mandatory EOD close for intraday positions
 """
-import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from skills.shared import get_logger, audit_log, approval_engine
+from skills.shared import get_logger, audit_log
 from skills.trading.exchange_client import get_exchange_client
 from .session import (
     get_session, is_market_open, minutes_to_close,
     should_close_intraday, check_pdt_compliance, MarketSession,
 )
-from .order_splitter import should_split, create_slices, execute_slices
+from .order_splitter import create_slices, execute_slices
 from .models import ExecutionReport
 
 logger = get_logger("execution.handlers")
@@ -224,8 +223,7 @@ async def execute_daily(decision: dict, predictions: dict[str, float]) -> dict:
     long_picks = [sym for sym, _ in sorted_preds[:n_long]]
     short_picks = [sym for sym, _ in sorted_preds[-n_short:]] if n_short > 0 else []
 
-    # Equal-weight for now (risk_parity requires vol estimates)
-    weighting = params.get("weighting", "equal")
+    # Equal-weight for now; risk parity requires fresh volatility estimates.
     target_gross = equity * leverage
 
     target_positions = {}

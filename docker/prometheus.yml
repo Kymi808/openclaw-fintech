@@ -10,9 +10,3 @@ scrape_configs:
     static_configs:
       - targets: ["openclaw-gateway:9090"]
     scrape_interval: 10s
-
-  - job_name: "ollama"
-    static_configs:
-      - targets: ["ollama:11434"]
-    scrape_interval: 30s
-    metrics_path: /api/tags

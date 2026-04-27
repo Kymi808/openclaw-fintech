@@ -18,7 +18,6 @@ Reference: López de Prado, "Advances in Financial Machine Learning"
            Cartea, Jaimungal & Penalva, "Algorithmic and High-Frequency Trading"
 """
 import numpy as np
-from typing import Optional
 
 from skills.shared import get_logger
 

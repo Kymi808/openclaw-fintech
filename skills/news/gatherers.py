@@ -10,11 +10,9 @@ Each gatherer fetches from Alpaca News API with targeted symbol/keyword
 filters, scores relevance, and extracts structured signals.
 """
 import asyncio
-from dataclasses import dataclass, field
-from datetime import datetime, timezone, timedelta
-from typing import Optional
+from dataclasses import dataclass
+from datetime import datetime, timezone
 
-import numpy as np
 
 from skills.shared import get_logger
 from skills.market_data import get_data_provider

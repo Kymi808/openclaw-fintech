@@ -15,7 +15,6 @@ Run as: PYTHONPATH=. python -m skills.orchestrator.scheduler
 import asyncio
 import os
 import signal
-import sys
 from datetime import datetime, time
 from zoneinfo import ZoneInfo
 
@@ -87,7 +86,6 @@ async def run_scheduled_task(task_name: str):
 
         elif task_name == "daily_pnl":
             from skills.pnl.reconciliation import reconcile_positions, format_reconciliation_report
-            from skills.pnl.tracker import get_pnl_tracker
             report = await reconcile_positions()
             logger.info(format_reconciliation_report(report))
             logger.info("Daily P&L snapshot recorded")

@@ -1,57 +1,40 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "=== OpenClaw Fintech Agent Team — Setup ==="
-
-# Check prerequisites
-command -v docker >/dev/null 2>&1 || { echo "Error: docker is required"; exit 1; }
-command -v docker compose >/dev/null 2>&1 || { echo "Error: docker compose is required"; exit 1; }
+echo "=== OpenClaw Quant setup ==="
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$PROJECT_DIR"
 
-# 1. Create .env from template if not exists
+command -v python >/dev/null 2>&1 || { echo "Error: python is required"; exit 1; }
+command -v docker >/dev/null 2>&1 || { echo "Error: docker is required"; exit 1; }
+docker compose version >/dev/null 2>&1 || { echo "Error: docker compose is required"; exit 1; }
+
 if [ ! -f gateway/.env ]; then
     cp gateway/.env.example gateway/.env
-    echo "Created gateway/.env from template"
-    echo "⚠️  IMPORTANT: Edit gateway/.env with your API keys before starting!"
-    echo ""
+    echo "Created gateway/.env from gateway/.env.example"
+    echo "Edit gateway/.env with real paper-trading credentials before starting services."
 fi
 
-# 2. Create data directories
-mkdir -p logs
-mkdir -p workspaces/{trading-agent,portfolio-agent,defi-agent,finance-agent,legal-agent}/data
+mkdir -p data logs workspaces/execution-agent workspaces/orchestrator/checkpoints
 
-# 3. Start Ollama first and pull the model
-echo "Starting Ollama..."
-docker compose -f docker/docker-compose.yaml up -d ollama
-echo "Waiting for Ollama to be ready..."
-sleep 5
-
-# Pull the local LLM model for legal/confidential processing
-echo "Pulling llama3.1:70b model (this may take a while on first run)..."
-docker exec fintech-ollama ollama pull llama3.1:70b || {
-    echo "Warning: Could not pull 70b model. Trying 8b instead..."
-    docker exec fintech-ollama ollama pull llama3.1:8b
-}
-
-# 4. Start all services
-echo "Starting all services..."
-docker compose -f docker/docker-compose.yaml up -d
+echo "Validating Compose files..."
+docker compose config >/dev/null
+docker compose -f docker/docker-compose.yaml config >/dev/null
 
 echo ""
-echo "=== Setup Complete ==="
-echo ""
-echo "Services:"
-echo "  Gateway:    ws://localhost:18789"
-echo "  Web UI:     http://localhost:3000"
-echo "  Ollama:     http://localhost:11434"
-echo "  Log Viewer: http://localhost:8080"
+echo "Setup complete."
 echo ""
 echo "Next steps:"
-echo "  1. Edit gateway/.env with your API keys"
-echo "  2. Configure target allocations in workspaces/portfolio-agent/config.json"
-echo "  3. Add SEC entities to track in workspaces/legal-agent/data/sec_state.json"
-echo "  4. Connect your messaging channels (Telegram, WhatsApp, Slack)"
-echo "  5. Send a message to test routing!"
+echo "  1. Create a virtualenv and install dependencies:"
+echo "     python -m venv .venv"
+echo "     . .venv/bin/activate"
+echo "     python -m pip install -r requirements.txt"
+echo "  2. Fill in gateway/.env."
+echo "  3. Run tests:"
+echo "     python -m pytest"
+echo "  4. Start the scheduler:"
+echo "     docker compose up -d --build trading-scheduler"
 echo ""
+echo "Optional local CLI:"
+echo "  docker compose --profile cli run --rm cli"

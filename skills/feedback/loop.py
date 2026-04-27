@@ -8,14 +8,13 @@ Called by the scheduler after market close. Connects:
 
 This is what makes the system evolve over time.
 """
-import os
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from pathlib import Path
 
 from skills.shared import get_logger, audit_log
 from skills.shared.state import safe_load_state, safe_save_state
 from .scorer import OutcomeScorer
-from .adapter import WeightAdapter, get_weight_adapter
+from .adapter import get_weight_adapter
 
 logger = get_logger("feedback.loop")
 

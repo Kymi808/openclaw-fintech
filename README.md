@@ -560,6 +560,10 @@ Slack/Discord webhook alerts for: pipeline failures, order rejections, reconcili
 ```bash
 git clone https://github.com/Kymi808/openclaw-fintech.git
 cd openclaw-fintech
+python -m venv .venv
+. .venv/bin/activate
+python -m pip install -r requirements.txt
+cp gateway/.env.example gateway/.env
 python cli.py
 ```
 
@@ -577,7 +581,8 @@ DATA_ENCRYPTION_KEY=...      # Fernet key for at-rest encryption (see below)
 
 # Optional:
 PRIMARY_MODEL=lightgbm       # overrides model priority (default: lightgbm)
-CS_SYSTEM_PATH=/abs/path     # CS repo location (default: /Users/kylezeng/CS_Multi_Model_Trading_System)
+CS_SYSTEM_PATH=/abs/path     # required path to CS_Multi_Model_Trading_System for real predictions
+ALLOW_DUMMY_PREDICTIONS=1    # local smoke tests only; never set in paper/live deployments
 ```
 
 **Generating a `DATA_ENCRYPTION_KEY`** (run once, then paste into `.env`):
@@ -588,15 +593,24 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 
 Without this key, the encryption manager falls back to a process-local ephemeral key on every start, meaning data written today cannot be decrypted tomorrow. The key must be stable across restarts. `.env` is loaded automatically at `skills.orchestrator` package import time so it's visible before any database initialization.
 
-Docker deployment (enables CrossMamba on Linux):
+The trading pipeline fails closed if the external CS model repo or trained model artifacts are not available. Set `CS_SYSTEM_PATH` to the model repository before running the scheduler. `ALLOW_DUMMY_PREDICTIONS=1` exists only for local smoke tests and should never be used in paper-trading or production deployments.
+
+Docker deployment:
 ```bash
-docker compose up -d
+docker compose up -d --build trading-scheduler
 ```
+
+See `HANDOFF.md` for the release checklist, supported surface, runtime-state policy, and security
+handoff notes.
 
 ## Testing
 
 ```bash
-python -m pytest tests/ -q    # 211 tests
+python -m ruff check .
+python -m pytest
+python -m compileall cli.py gateway_bot.py skills tests
+docker compose config --services
+docker compose -f docker/docker-compose.yaml config --services
 ```
 
 Coverage: analyst scoring, personality conviction, preset interpolation, PM resolution, CIO safety override, market session detection, PDT compliance, order splitting, model blending, P&L tracking, reconciliation, checkpoint recovery, feedback loop, FMP integration, intraday signals, position management, ATR calibration, correlation filtering.

@@ -7,9 +7,7 @@ predictions that feed into the agent debate pipeline.
 import sys
 import os
 import pickle
-import logging
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -19,10 +17,11 @@ from skills.shared import get_logger
 logger = get_logger("signals.bridge")
 
 # Path to the CS trading system
+_REPO_ROOT = Path(__file__).resolve().parents[2]
 CS_SYSTEM_PATH = Path(os.getenv(
     "CS_SYSTEM_PATH",
-    "/Users/kylezeng/CS_Multi_Model_Trading_System"
-))
+    str(_REPO_ROOT.parent / "CS_Multi_Model_Trading_System"),
+)).expanduser()
 
 # Model file paths
 MODEL_PATHS = {
@@ -207,8 +206,6 @@ def _load_pickle_compat(path: str) -> dict:
     Strategy: use a custom Unpickler that intercepts pandas Index reconstruction
     and forces object dtype instead of StringDtype.
     """
-    import io
-    import copyreg
 
     # First try standard load
     try:

@@ -17,7 +17,6 @@ This prevents the most dangerous crash scenario:
 the entire pipeline and tries to execute 10 new orders → now 15 positions."
 """
 import json
-import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
 from enum import Enum

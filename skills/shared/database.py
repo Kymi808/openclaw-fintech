@@ -8,8 +8,7 @@ import json
 import threading
 from contextlib import contextmanager
 from pathlib import Path
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import date, datetime, timedelta, timezone
 
 from .config import get_logger
 from .encryption import EncryptionManager
@@ -23,6 +22,8 @@ class Database:
     """Thread-safe SQLite database with per-thread connections."""
 
     _tls = threading.local()
+    _locks_guard = threading.Lock()
+    _locks: dict[str, threading.RLock] = {}
 
     def __init__(self, db_path: str = None):
         self.db_path = db_path or str(DB_PATH)
@@ -31,22 +32,43 @@ class Database:
         self._schema_sql = self._get_schema_sql()
         self._init_schema()
 
+    @classmethod
+    def _get_path_lock(cls, db_path: str) -> threading.RLock:
+        """Return a process-local lock for one SQLite file."""
+        with cls._locks_guard:
+            if db_path not in cls._locks:
+                cls._locks[db_path] = threading.RLock()
+            return cls._locks[db_path]
+
+    def _parse_reference_date(self, as_of: date | datetime | str | None = None) -> date:
+        """Normalize user/test supplied dates to a UTC calendar date."""
+        if as_of is None:
+            return datetime.now(timezone.utc).date()
+        if isinstance(as_of, datetime):
+            return as_of.date()
+        if isinstance(as_of, date):
+            return as_of
+        return datetime.fromisoformat(as_of).date()
+
     def _get_connection(self) -> sqlite3.Connection:
         """Get a thread-local connection keyed by database path."""
         if not hasattr(Database._tls, "connections"):
             Database._tls.connections = {}
         key = self.db_path
-        if key not in Database._tls.connections:
-            conn = sqlite3.connect(
-                self.db_path,
-                timeout=30.0,
-                check_same_thread=False,
-            )
-            conn.row_factory = sqlite3.Row
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA foreign_keys=ON")
-            conn.execute("PRAGMA busy_timeout=5000")
-            Database._tls.connections[key] = conn
+        lock = self._get_path_lock(key)
+        with lock:
+            if key not in Database._tls.connections:
+                conn = sqlite3.connect(
+                    self.db_path,
+                    timeout=30.0,
+                    check_same_thread=False,
+                    isolation_level=None,
+                )
+                conn.row_factory = sqlite3.Row
+                conn.execute("PRAGMA journal_mode=WAL")
+                conn.execute("PRAGMA foreign_keys=ON")
+                conn.execute("PRAGMA busy_timeout=30000")
+                Database._tls.connections[key] = conn
         return Database._tls.connections[key]
 
     @staticmethod
@@ -227,19 +249,24 @@ class Database:
     @contextmanager
     def transaction(self):
         """Context manager for atomic transactions."""
-        conn = self._get_connection()
-        try:
-            yield conn
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            raise
+        lock = self._get_path_lock(self.db_path)
+        with lock:
+            conn = self._get_connection()
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                yield conn
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
 
     def _init_schema(self):
         """Initialize all tables using stored schema SQL."""
-        conn = self._get_connection()
-        conn.executescript(self._schema_sql)
-        conn.commit()
+        lock = self._get_path_lock(self.db_path)
+        with lock:
+            conn = self._get_connection()
+            conn.executescript(self._schema_sql)
+            conn.commit()
         logger.info(f"Database initialized at {self.db_path}")
 
     # === Audit Log ===
@@ -396,15 +423,28 @@ class Database:
                 ),
             )
 
-    def get_expiring_contracts(self, within_days: int = 30) -> list[dict]:
+    def get_expiring_contracts(
+        self,
+        within_days: int = 30,
+        as_of: date | datetime | str | None = None,
+    ) -> list[dict]:
+        """Return contracts expiring soon, including recently expired agreements.
+
+        The seven-day lookback catches contracts that expired during downtime. `as_of`
+        exists so tests and operational checks can use a deterministic date.
+        """
+        reference_date = self._parse_reference_date(as_of)
+        start_date = reference_date - timedelta(days=7)
+        end_date = reference_date + timedelta(days=within_days)
+
         conn = self._get_connection()
         rows = conn.execute(
             """SELECT * FROM contracts
                WHERE expiration_date IS NOT NULL
-               AND date(expiration_date) <= date('now', ? || ' days')
-               AND date(expiration_date) >= date('now', '-7 days')
+               AND date(expiration_date) >= date(?)
+               AND date(expiration_date) <= date(?)
                ORDER BY expiration_date ASC""",
-            (str(within_days),),
+            (start_date.isoformat(), end_date.isoformat()),
         ).fetchall()
         result = [dict(row) for row in rows]
         for row in result:

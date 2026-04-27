@@ -6,7 +6,6 @@ Tests for the quant agent layer:
 - PM resolution + CIO safety override
 - Market session detection
 """
-import pytest
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -224,7 +223,7 @@ class TestPMResolution:
         assert selected == "aggressive"
 
     def test_cio_safety_override(self):
-        from skills.pm.resolution import cio_decide, SAFETY_OVERRIDE_VIX
+        from skills.pm.resolution import cio_decide
 
         proposals = {
             "aggressive": {"max_positions_long": 20},

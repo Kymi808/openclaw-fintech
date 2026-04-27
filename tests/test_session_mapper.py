@@ -1,7 +1,7 @@
 """Tests for the session mapper (platform identity → RBAC)."""
 import pytest
 from skills.shared.session_mapper import SessionMapper
-from skills.shared.rbac import AccessControl, Role, Action
+from skills.shared.rbac import Role
 
 
 @pytest.fixture

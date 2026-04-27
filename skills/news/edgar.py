@@ -47,8 +47,8 @@ async def _get_cik(ticker: str) -> Optional[str]:
                 "https://www.sec.gov/cgi-bin/browse-edgar",
                 params={"action": "getcompany", "company": ticker,
                         "type": "", "dateb": "", "owner": "include",
-                        "count": 1, "search_text": "", "action": "getcompany",
-                        "CIK": ticker, "output": "atom"},
+                        "count": 1, "search_text": "", "CIK": ticker,
+                        "output": "atom"},
                 headers={"User-Agent": USER_AGENT},
             )
             if resp.status_code == 200:
@@ -147,8 +147,6 @@ async def _search_filings(
 
             # Map entity to ticker symbols
             symbols = [ticker] if ticker else _extract_symbols(entity)
-
-            age_hours = _hours_since(file_date)
 
             signals.append(NewsSignal(
                 headline=f"[SEC {filing_type}] {entity}: {description[:100]}",

@@ -1,32 +1,34 @@
-# OpenClaw Fintech Agent Team — Python Dependencies
+# OpenClaw Quant — Python dependencies
 
 # HTTP client (async)
-httpx>=0.27.0
+httpx>=0.27.0,<1.0.0
 
 # Encryption at rest
-cryptography>=43.0.0
-
-# Web3 / blockchain (for DeFi agent)
-# web3>=7.0.0  # uncomment if using web3.py directly
+cryptography>=43.0.0,<46.0.0
 
 # PDF processing (for legal agent)
-pdfplumber>=0.11.0
-PyMuPDF>=1.24.0
+pdfplumber>=0.11.0,<1.0.0
+PyMuPDF>=1.24.0,<2.0.0
 
-# Banking (Plaid)
-plaid-python>=25.0.0
+# Banking/accounting integrations
+plaid-python>=25.0.0,<30.0.0
 
 # Data handling
-python-dateutil>=2.9.0
-pandas>=2.0.0
-numpy>=1.24.0
+python-dateutil>=2.9.0,<3.0.0
+pandas>=2.0.0,<3.0.0
+numpy>=1.24.0,<3.0.0
 
 # Async compatibility
-nest_asyncio>=1.6.0
+nest_asyncio>=1.6.0,<2.0.0
 
 # Environment
-python-dotenv>=1.0.0
+python-dotenv>=1.0.0,<2.0.0
 
-# Testing
-pytest>=8.0.0
-pytest-asyncio>=0.24.0
+# Optional gateway/runtime adapters shipped in this repo
+python-telegram-bot>=21.0,<23.0
+lightgbm>=4.0.0,<5.0.0
+
+# Test and quality gates
+pytest>=8.0.0,<10.0.0
+pytest-asyncio>=0.24.0,<2.0.0
+ruff>=0.8.0,<1.0.0

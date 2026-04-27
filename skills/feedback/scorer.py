@@ -15,7 +15,6 @@ All scores are stored in SQLite for historical analysis.
 import sqlite3
 import os
 from datetime import datetime, timezone
-from typing import Optional
 
 import numpy as np
 

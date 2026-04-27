@@ -2,7 +2,6 @@
 Deterministic regime detection from cross-asset data.
 No LLM involved — pure quantitative signal extraction.
 """
-from datetime import datetime, timezone, timedelta
 
 from skills.shared import get_logger
 from skills.market_data import AlpacaDataProvider

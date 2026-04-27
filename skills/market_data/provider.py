@@ -10,13 +10,12 @@ Replaces yfinance with Alpaca's institutional-grade data:
 All methods are async and include retry/rate-limit resilience.
 """
 import asyncio
-import os
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from typing import Optional
 
 import httpx
 
-from skills.shared import get_logger, require_env, retry, RetryExhausted, api_limiter
+from skills.shared import get_logger, require_env, retry, api_limiter
 from .models import Bar, NewsArticle, Snapshot
 
 logger = get_logger("market_data.provider")

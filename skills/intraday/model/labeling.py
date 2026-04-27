@@ -19,7 +19,6 @@ Why this is better than fixed-horizon returns:
 Reference: López de Prado, "Advances in Financial Machine Learning" (2018), Ch. 3
 """
 import numpy as np
-from typing import Optional
 
 from skills.shared import get_logger
 
@@ -146,15 +145,15 @@ def compute_sample_weights(labels: list[dict], closes: np.ndarray) -> np.ndarray
         return np.array([])
 
     # Build concurrency matrix: for each bar, how many active positions overlap
-    max_bar = max(l["exit_idx"] for l in labels)
+    max_bar = max(label["exit_idx"] for label in labels)
     concurrency = np.zeros(max_bar + 1)
-    for l in labels:
-        concurrency[l["entry_idx"]:l["exit_idx"] + 1] += 1
+    for label in labels:
+        concurrency[label["entry_idx"]:label["exit_idx"] + 1] += 1
 
     # Average uniqueness per sample
     weights = np.zeros(n)
-    for i, l in enumerate(labels):
-        entry, exit = l["entry_idx"], l["exit_idx"]
+    for i, label in enumerate(labels):
+        entry, exit = label["entry_idx"], label["exit_idx"]
         if exit > entry:
             avg_conc = np.mean(concurrency[entry:exit + 1])
             weights[i] = 1.0 / avg_conc if avg_conc > 0 else 1.0

@@ -52,4 +52,5 @@ class TestFMPConfiguration:
         # This is a documentation/contract test
         from skills.market_data.fmp import FMPProvider
         # Verify the class has the method
+        assert cs_fields
         assert hasattr(FMPProvider, "get_fundamentals_batch")

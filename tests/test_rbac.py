@@ -1,6 +1,6 @@
 """Tests for role-based access control."""
 import pytest
-from skills.shared.rbac import AccessControl, Role, Action
+from skills.shared.rbac import Role, Action
 
 
 class TestRBAC:

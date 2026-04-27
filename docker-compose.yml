@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   trading-scheduler:
     build: .
@@ -13,11 +11,11 @@ services:
       - ./workspaces:/app/workspaces        # persist agent state
       - ./logs:/app/logs                    # persist log files
     restart: unless-stopped
-    command: python -m skills.orchestrator.scheduler
+    command: ["python", "-m", "skills.orchestrator.scheduler"]
 
-  demo:
+  cli:
     build: .
-    container_name: openclaw-demo
+    container_name: openclaw-cli
     env_file: gateway/.env
     environment:
       - PYTHONPATH=/app
@@ -26,6 +24,6 @@ services:
       - ./workspaces:/app/workspaces
     stdin_open: true
     tty: true
-    command: python demo.py
+    command: ["python", "cli.py"]
     profiles:
-      - demo  # only starts with: docker compose --profile demo up demo
+      - cli  # start with: docker compose --profile cli run --rm cli

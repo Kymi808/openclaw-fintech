@@ -1,7 +1,6 @@
 """
 Tests for adaptive feedback loop.
 """
-import pytest
 import tempfile
 import os
 from skills.feedback.scorer import OutcomeScorer
@@ -55,7 +54,6 @@ class TestWeightAdapter:
         self.scorer = OutcomeScorer(db_path=os.path.join(self.tmpdir, "test_fb.db"))
         self.adapter = WeightAdapter(scorer=self.scorer)
         # Override state path
-        from pathlib import Path
         self.adapter.state = {
             "analyst_weight_adjustments": {},
             "pm_weight_adjustments": {},

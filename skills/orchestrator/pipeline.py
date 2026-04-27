@@ -10,17 +10,16 @@ Daily cycle:
 
 Intraday cycle: same pipeline, different mode + auto-approval
 """
-import asyncio
 from datetime import datetime, timezone
 
 from skills.shared import get_logger, audit_log
-from skills.shared.alerting import alert_pipeline_failure, alert_daily_summary
+from skills.shared.alerting import alert_pipeline_failure
 from skills.intel.handlers import gather_briefing
 from skills.analyst.handlers import form_all_theses
 from skills.pm.handlers import resolve
 from skills.execution.handlers import execute_daily, execute_intraday, close_intraday_positions
 from skills.execution.session import (
-    get_session, is_market_open, should_close_intraday, MarketSession,
+    get_session, is_market_open, should_close_intraday,
 )
 from .checkpoint import CheckpointManager, PipelineStep, generate_run_id
 
@@ -35,6 +34,13 @@ USE_REAL_MODELS = True
 MIN_CYCLE_INTERVAL = 300  # 5 minutes
 _last_daily_run: float = 0.0
 _last_intraday_run: float = 0.0
+
+
+def _allow_dummy_predictions() -> bool:
+    """Return whether local smoke tests may use synthetic predictions."""
+    import os as _os
+
+    return _os.environ.get("ALLOW_DUMMY_PREDICTIONS", "").lower() in {"1", "true", "yes"}
 
 
 def _load_real_predictions(pm_params: dict = None) -> dict[str, float]:
@@ -75,8 +81,14 @@ def _load_real_predictions(pm_params: dict = None) -> dict[str, float]:
         except Exception as e:
             logger.warning(f"{model_name} failed: {e}, trying next model")
 
-    logger.error("All models failed, falling back to dummy predictions")
-    return _dummy_predictions()
+    message = (
+        "No trained model could be loaded. Set CS_SYSTEM_PATH to the CS model repo "
+        "or set ALLOW_DUMMY_PREDICTIONS=1 for local smoke tests."
+    )
+    if _allow_dummy_predictions():
+        logger.warning(f"{message} Using dummy predictions because ALLOW_DUMMY_PREDICTIONS=1.")
+        return _dummy_predictions()
+    raise RuntimeError(message)
 
 
 async def run_daily_cycle(predictions: dict[str, float] = None) -> dict:
@@ -121,23 +133,23 @@ async def run_daily_cycle(predictions: dict[str, float] = None) -> dict:
     # Create checkpoint
     _checkpoint_mgr.create(run_id, "daily")
 
-    if predictions is None:
-        if USE_REAL_MODELS:
-            predictions = _load_real_predictions()
-        else:
-            predictions = _dummy_predictions()
-
-    # Cache predictions so intraday cycles can reuse them
-    _cache_predictions(predictions)
-
     result = {
         "cycle": "daily",
         "run_id": run_id,
         "start": start.isoformat(),
-        "predictions_count": len(predictions),
     }
 
     try:
+        if predictions is None:
+            if USE_REAL_MODELS:
+                predictions = _load_real_predictions()
+            else:
+                predictions = _dummy_predictions()
+
+        # Cache predictions so intraday cycles can reuse them
+        _cache_predictions(predictions)
+        result["predictions_count"] = len(predictions)
+
         # 1. Market Intelligence
         logger.info("Step 1: Gathering market intelligence...")
         briefing = await gather_briefing()
@@ -276,10 +288,15 @@ async def run_intraday_cycle(predictions: dict[str, float] = None) -> dict:
 
     # Load predictions (reuse daily predictions for model-aligned intraday)
     if predictions is None:
-        if USE_REAL_MODELS:
-            predictions = _load_real_predictions()
-        else:
-            predictions = _dummy_predictions()
+        try:
+            if USE_REAL_MODELS:
+                predictions = _load_real_predictions()
+            else:
+                predictions = _dummy_predictions()
+        except Exception as e:
+            logger.error(f"Intraday prediction load failed: {e}")
+            await alert_pipeline_failure("intraday", "prediction_load", str(e))
+            return {"status": "failed", "cycle": "intraday", "error": str(e)}
 
     # Run agent debate for parameter adjustments
     briefing = await gather_briefing()

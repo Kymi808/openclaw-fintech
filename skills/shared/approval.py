@@ -7,7 +7,18 @@ Supports: create, approve, deny, expire, query history.
 import json
 import os
 import sqlite3
+from dataclasses import dataclass, field
+from datetime import datetime, timezone, timedelta
+from enum import Enum
+from typing import Optional
+
 import numpy as np
+
+from .config import audit_log, get_logger
+
+logger = get_logger("approval")
+
+DB_PATH = os.path.join("data", "approvals.db")
 
 
 def _json_default(obj):
@@ -19,15 +30,6 @@ def _json_default(obj):
     if isinstance(obj, np.ndarray):
         return obj.tolist()
     raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
-from dataclasses import dataclass, field
-from datetime import datetime, timezone, timedelta
-from enum import Enum
-from typing import Optional
-from .config import audit_log, get_logger
-
-logger = get_logger("approval")
-
-DB_PATH = os.path.join("data", "approvals.db")
 
 
 class ApprovalStatus(Enum):

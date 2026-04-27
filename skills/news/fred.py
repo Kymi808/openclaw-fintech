@@ -19,7 +19,6 @@ The system needs to know WHEN these releases happen and what the surprise was.
 """
 import os
 from datetime import datetime, timezone, timedelta
-from typing import Optional
 
 import httpx
 

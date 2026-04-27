@@ -5,7 +5,6 @@ Exposes a /health endpoint and checks dependencies.
 import asyncio
 import time
 from dataclasses import dataclass
-from typing import Optional
 import httpx
 
 from .config import get_logger

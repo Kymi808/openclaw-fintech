@@ -3,9 +3,14 @@ gateway/.env
 *.env
 !.env.example
 
+# Local assistant/session state
+.openclaw/
+memory/
+
 # Data files (contain financial data)
 workspaces/*/data/
 workspaces/*/state.json
+workspaces/*/pending_execution.json
 logs/
 
 # Python
@@ -30,9 +35,12 @@ Thumbs.db
 data/*.csv
 data/*.json
 data/*.db
+data/*.db-*
+data/sessions.json
 
 # Workspace state (regenerated at runtime)
 workspaces/*/state.json
+workspaces/*/pending_execution.json
 workspaces/orchestrator/checkpoints/
 
 # Sentiment cache

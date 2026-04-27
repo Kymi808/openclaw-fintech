@@ -11,13 +11,11 @@ from typing import Optional
 import httpx
 
 from skills.shared import (
-    get_logger, require_env, audit_log, mask_sensitive,
-    retry, RetryExhausted,
+    get_logger, require_env, audit_log, retry, RetryExhausted,
     binance_circuit, coinbase_circuit, alpaca_circuit,
     exchange_limiter, api_limiter,
     metrics, timed,
 )
-from skills.shared.config import ALLOWED_STOCK_PAIRS
 
 logger = get_logger("exchange_client")
 

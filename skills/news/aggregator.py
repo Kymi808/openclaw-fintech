@@ -89,7 +89,6 @@ async def aggregate_all_news(portfolio_symbols: list[str] = None) -> NewsDigest:
     # Compute aggregate sentiments
     macro_sent = _avg_sentiment(macro_signals)
     sector_sentiments = _sector_sentiments(sector_signals)
-    company_sent = _avg_sentiment(company_signals)
 
     all_signals = macro_signals + sector_signals + company_signals
     overall = _avg_sentiment(all_signals)

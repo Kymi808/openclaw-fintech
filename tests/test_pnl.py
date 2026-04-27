@@ -1,7 +1,6 @@
 """
 Tests for P&L tracker and position reconciliation.
 """
-import pytest
 import os
 import tempfile
 from skills.pnl.tracker import PnLTracker, DailySnapshot
@@ -20,7 +19,6 @@ class TestPnLTracker:
     def _insert_snapshot(self, date_str: str, equity: float, positions=None):
         """Insert a snapshot with a specific date (bypassing today's date)."""
         import sqlite3
-        import numpy as np
 
         positions = positions or []
         positions_value = sum(abs(p.get("market_value", 0)) for p in positions)

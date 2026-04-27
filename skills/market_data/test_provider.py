@@ -16,7 +16,7 @@ async def main():
     from skills.market_data import AlpacaDataProvider
 
     provider = AlpacaDataProvider()
-    print(f"Alpaca Data Provider initialized")
+    print("Alpaca Data Provider initialized")
     print(f"  API Key: {provider.api_key[:8]}...")
     print()
 
@@ -71,7 +71,7 @@ async def main():
         print(f"  SPY: {len(spy_bars)} 1-min bars today")
         if spy_bars:
             print(f"  Latest: {spy_bars[-1].timestamp} close=${spy_bars[-1].close:,.2f} vol={spy_bars[-1].volume:,.0f}")
-        print(f"  OK — intraday data available")
+        print("  OK — intraday data available")
     except Exception as e:
         print(f"  FAILED: {e}")
     print()
@@ -120,7 +120,7 @@ async def main():
         print(f"  Shape: {df.shape}")
         print(f"  Columns: {list(df.columns[:6])}...")
         print(f"  Date range: {df.index[0]} to {df.index[-1]}")
-        print(f"  OK — DataFrame format matches yfinance")
+        print("  OK — DataFrame format matches yfinance")
     except Exception as e:
         print(f"  FAILED: {e}")
     print()
@@ -134,9 +134,9 @@ async def main():
         print(f"  Shape: {df.shape}")
         print(f"  Columns: {list(df.columns)}")
         if not df.empty:
-            print(f"  Latest row:")
+            print("  Latest row:")
             print(f"    {df.iloc[-1].to_dict()}")
-        print(f"  OK — cross-asset DataFrame ready")
+        print("  OK — cross-asset DataFrame ready")
     except Exception as e:
         print(f"  FAILED: {e}")
 

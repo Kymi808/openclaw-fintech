@@ -18,7 +18,6 @@ Reference: López de Prado, "Advances in Financial Machine Learning", Ch. 3.6
 """
 import numpy as np
 import pandas as pd
-from typing import Optional
 
 from skills.shared import get_logger
 

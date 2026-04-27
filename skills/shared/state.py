@@ -8,10 +8,8 @@ Handles:
 - Backup on load failure
 """
 import json
-import os
 import shutil
 from pathlib import Path
-from typing import Any
 
 from .config import get_logger
 

@@ -4,7 +4,6 @@ Provides access to US court opinions, PACER data, and legal citations.
 https://www.courtlistener.com/api/
 """
 from dataclasses import dataclass
-from typing import Optional
 import httpx
 
 from skills.shared import get_logger, audit_log, retry
@@ -163,7 +162,7 @@ def format_search_results(result: LegalSearchResult) -> str:
         f"📚 Legal Research: \"{result.query}\"",
         f"Results: {result.total_results} total ({len(result.opinions)} shown)",
         f"Source: {result.jurisdiction_note}",
-        f"",
+        "",
     ]
 
     for i, op in enumerate(result.opinions, 1):

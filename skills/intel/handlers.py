@@ -4,7 +4,6 @@ Market Intelligence Agent handlers.
 Gathers macro regime data, market breadth, and news sentiment
 into a structured MarketBriefing consumed by analyst agents.
 """
-import json
 from datetime import datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo

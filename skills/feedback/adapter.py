@@ -10,8 +10,6 @@ Uses exponential decay weighting:
 This is the core learning mechanism. Standard at quant firms.
 Called "online learning" or "adaptive allocation."
 """
-import json
-import os
 from pathlib import Path
 from typing import Optional
 

@@ -1,7 +1,6 @@
 """
 Tests for execution order manager.
 """
-import pytest
 from skills.execution.order_manager import OrderStatus, FILL_PRICE_DEVIATION
 
 

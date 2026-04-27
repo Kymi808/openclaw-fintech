@@ -1,7 +1,6 @@
 """
 Tests for pipeline checkpoint and crash recovery.
 """
-import pytest
 import tempfile
 from skills.orchestrator.checkpoint import (
     CheckpointManager, PipelineStep, generate_run_id,

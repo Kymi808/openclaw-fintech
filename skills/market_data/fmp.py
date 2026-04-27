@@ -15,19 +15,17 @@ FMP API: https://financialmodelingprep.com/developer/docs
 Pricing: Free tier (250 req/day), $29/mo (unlimited)
 """
 import json
+import logging
 import os
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional
-
-import logging
+from typing import Dict, List
 
 import httpx
+from skills.shared import get_logger
 
 # Suppress httpx request logging — it leaks API keys in URLs
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
-
-from skills.shared import get_logger
 
 logger = get_logger("market_data.fmp")
 

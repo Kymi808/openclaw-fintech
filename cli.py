@@ -192,7 +192,7 @@ async def cmd_feedback() -> str:
     scores = scorer.get_all_agent_scores()
 
     lines = [
-        f"Adaptive Feedback Status",
+        "Adaptive Feedback Status",
         f"  Updates: {status.get('update_count', 0)}",
         f"  Last update: {status.get('last_update', 'never')}",
         "",
@@ -231,7 +231,10 @@ async def cmd_analysts() -> str:
     from skills.orchestrator.pipeline import _dummy_predictions, _load_real_predictions, USE_REAL_MODELS
 
     briefing = await gather_briefing()
-    predictions = _load_real_predictions() if USE_REAL_MODELS else _dummy_predictions()
+    try:
+        predictions = _load_real_predictions() if USE_REAL_MODELS else _dummy_predictions()
+    except Exception as e:
+        return f"Could not load model predictions: {e}"
     portfolio_state = {"current_drawdown": 0.0}
     theses = await form_all_theses(briefing, predictions, portfolio_state)
 
@@ -464,7 +467,6 @@ COMMANDS = {
     "pm status": cmd_pm_status,
     "session": cmd_session,
     "health": cmd_health,
-    "feedback": cmd_feedback,
 }
 
 SYNC_COMMANDS = {

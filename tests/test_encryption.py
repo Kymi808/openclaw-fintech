@@ -1,5 +1,4 @@
 """Tests for encryption at rest."""
-import pytest
 from skills.shared.encryption import EncryptionManager
 
 

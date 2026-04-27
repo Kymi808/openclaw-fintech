@@ -16,7 +16,6 @@ References:
 """
 import numpy as np
 import pandas as pd
-from typing import Optional
 
 from skills.shared import get_logger
 

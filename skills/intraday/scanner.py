@@ -13,7 +13,6 @@ A signal is only valid if the technical direction AGREES with the model:
 This ensures intraday trades are aligned with the model's 10-day view,
 using technicals only for entry timing.
 """
-import asyncio
 from datetime import datetime, timezone
 
 from skills.shared import get_logger
