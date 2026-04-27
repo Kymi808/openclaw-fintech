@@ -25,6 +25,19 @@ from .provider import AlpacaDataProvider, CROSS_ASSET_MAP
 logger = logging.getLogger(__name__)
 
 
+def _production_mode() -> bool:
+    """Return whether synthetic market data must be refused."""
+    return os.environ.get("TRADING_ENV", "").lower() in {"paper", "live", "production"}
+
+
+def _refuse_synthetic_data(kind: str) -> None:
+    if _production_mode():
+        raise RuntimeError(
+            f"{kind} fetch returned insufficient real data and TRADING_ENV is "
+            f"{os.environ.get('TRADING_ENV')!r}. Refusing to generate synthetic market data."
+        )
+
+
 def _run_async(coro):
     """Run an async coroutine from sync code, handling existing event loops."""
     try:
@@ -121,7 +134,8 @@ def fetch_price_data(
             logger.info(f"Cached: {prices.shape}")
             return prices, volumes
 
-    # Fallback: synthetic data (same as original)
+    # Fallback: synthetic data for offline research only.
+    _refuse_synthetic_data("Alpaca price")
     logger.warning("Alpaca fetch returned insufficient data — generating synthetic")
     from .synthetic import generate_synthetic_prices
     prices, volumes = generate_synthetic_prices(tickers, start_date, end_date)
@@ -198,6 +212,7 @@ def fetch_cross_asset_data(
             ca.to_csv(cache_file)
             return ca
 
+    _refuse_synthetic_data("Alpaca cross-asset")
     logger.warning("Alpaca cross-asset fetch failed — generating synthetic")
     from .synthetic import generate_synthetic_cross_asset
     ca = generate_synthetic_cross_asset(tickers, start_date, end_date)

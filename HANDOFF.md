@@ -43,6 +43,14 @@ The production daily pipeline requires the external CS model repository:
 export CS_SYSTEM_PATH=/absolute/path/to/CS_Multi_Model_Trading_System
 ```
 
+For Docker, mount the model repo into the container:
+
+```bash
+CS_SYSTEM_PATH_HOST=/absolute/path/to/CS_Multi_Model_Trading_System \
+  docker compose -f docker-compose.yml -f docker-compose.models.yml \
+  up -d --build trading-scheduler
+```
+
 If no trained model can be loaded, the scheduler fails closed. For local smoke tests only:
 
 ```bash
@@ -60,6 +68,7 @@ python -m ruff check .
 python -m pytest
 python -m compileall cli.py gateway_bot.py skills tests
 docker compose config --services
+CS_SYSTEM_PATH_HOST=/tmp docker compose -f docker-compose.yml -f docker-compose.models.yml config --services
 docker compose -f docker/docker-compose.yaml config --services
 docker build .
 ```

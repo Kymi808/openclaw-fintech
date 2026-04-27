@@ -6,6 +6,7 @@ services:
     environment:
       - PYTHONPATH=/app
       - TZ=America/New_York
+      - TRADING_ENV=paper
     volumes:
       - ./data:/app/data                    # persist SQLite DBs
       - ./workspaces:/app/workspaces        # persist agent state
@@ -19,6 +20,7 @@ services:
     env_file: gateway/.env
     environment:
       - PYTHONPATH=/app
+      - TRADING_ENV=paper
     volumes:
       - ./data:/app/data
       - ./workspaces:/app/workspaces

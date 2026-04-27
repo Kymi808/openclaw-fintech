@@ -45,6 +45,7 @@ jobs:
       - name: Validate Compose files
         run: |
           docker compose config --services
+          CS_SYSTEM_PATH_HOST=/tmp docker compose -f docker-compose.yml -f docker-compose.models.yml config --services
           docker compose -f docker/docker-compose.yaml config --services
 
       - name: Build scheduler image

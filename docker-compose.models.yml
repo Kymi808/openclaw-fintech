@@ -1,0 +1,12 @@
+services:
+  trading-scheduler:
+    environment:
+      - CS_SYSTEM_PATH=/cs-system
+    volumes:
+      - ${CS_SYSTEM_PATH_HOST:?Set CS_SYSTEM_PATH_HOST to the CS_Multi_Model_Trading_System path}:/cs-system:ro
+
+  cli:
+    environment:
+      - CS_SYSTEM_PATH=/cs-system
+    volumes:
+      - ${CS_SYSTEM_PATH_HOST:?Set CS_SYSTEM_PATH_HOST to the CS_Multi_Model_Trading_System path}:/cs-system:ro

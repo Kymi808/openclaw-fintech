@@ -573,6 +573,7 @@ API keys and settings in `gateway/.env`:
 ALPACA_API_KEY=...
 ALPACA_API_SECRET=...
 ALPACA_BASE_URL=https://paper-api.alpaca.markets   # paper trading endpoint
+TRADING_ENV=paper             # refuses synthetic market data in scheduler
 ANTHROPIC_API_KEY=...        # LLM sentiment + research reports
 FMP_API_KEY=...              # point-in-time fundamentals ($29/mo)
 FRED_API_KEY=...             # economic data (free)
@@ -595,9 +596,11 @@ Without this key, the encryption manager falls back to a process-local ephemeral
 
 The trading pipeline fails closed if the external CS model repo or trained model artifacts are not available. Set `CS_SYSTEM_PATH` to the model repository before running the scheduler. `ALLOW_DUMMY_PREDICTIONS=1` exists only for local smoke tests and should never be used in paper-trading or production deployments.
 
-Docker deployment:
+Docker deployment with the external model repo mounted read-only:
 ```bash
-docker compose up -d --build trading-scheduler
+CS_SYSTEM_PATH_HOST=/absolute/path/to/CS_Multi_Model_Trading_System \
+  docker compose -f docker-compose.yml -f docker-compose.models.yml \
+  up -d --build trading-scheduler
 ```
 
 See `HANDOFF.md` for the release checklist, supported surface, runtime-state policy, and security
